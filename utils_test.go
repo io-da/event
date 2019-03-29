@@ -98,7 +98,7 @@ func (hdl *testHandler1) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testHandler1) ListenTo(evt Event) bool {
+func (*testHandler1) ListensTo(evt Event) bool {
 	_, listens := evt.(*testEvent1)
 	return listens
 }
@@ -115,7 +115,7 @@ func (hdl *testHandler2) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testHandler2) ListenTo(evt Event) bool {
+func (*testHandler2) ListensTo(evt Event) bool {
 	switch evt.(type) {
 	case *testEvent2, *testEvent3, *testEventDynamicTopic:
 		return true
@@ -131,7 +131,7 @@ type emptyHandler struct {
 func (hdl *emptyHandler) Handle(evt Event) {
 	// handles everything
 }
-func (*emptyHandler) ListenTo(evt Event) bool {
+func (*emptyHandler) ListensTo(evt Event) bool {
 	// listens to everything
 	return true
 }
@@ -149,7 +149,7 @@ func (hdl *testHandlerOrder) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testHandlerOrder) ListenTo(evt Event) bool {
+func (*testHandlerOrder) ListensTo(evt Event) bool {
 	_, listens := evt.(*testHandlerOrderEvent)
 	return listens
 }
@@ -174,7 +174,7 @@ func (hdl *testEventOrderHandler) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testEventOrderHandler) ListenTo(evt Event) bool {
+func (*testEventOrderHandler) ListensTo(evt Event) bool {
 	_, listens := evt.(eventOrder)
 	return listens
 }
@@ -200,7 +200,7 @@ func (hdl *benchmarkOrderedEventHandler) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*benchmarkOrderedEventHandler) ListenTo(evt Event) bool {
+func (*benchmarkOrderedEventHandler) ListensTo(evt Event) bool {
 	_, listens := evt.(*benchmarkOrderedEvent)
 	return listens
 }
@@ -217,7 +217,7 @@ func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*benchmarkConcurrentEventHandler) ListenTo(evt Event) bool {
+func (*benchmarkConcurrentEventHandler) ListensTo(evt Event) bool {
 	_, listens := evt.(*benchmarkConcurrentEvent)
 	return listens
 }

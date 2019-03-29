@@ -64,7 +64,7 @@ func (ctrl *controller) worker(queuedEvents <-chan Event, closed chan<- bool) {
 			break
 		}
 		for _, hdl := range ctrl.handlers {
-			if hdl.ListenTo(evt) {
+			if hdl.ListensTo(evt) {
 				hdl.Handle(evt)
 			}
 		}

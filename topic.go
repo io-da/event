@@ -38,7 +38,7 @@ func (tpc *topic) worker(queuedEvents <-chan Event, closed chan<- bool) {
 			break
 		}
 		for _, hdl := range *tpc.handlers {
-			if hdl.ListenTo(evt) {
+			if hdl.ListensTo(evt) {
 				hdl.Handle(evt)
 			}
 		}

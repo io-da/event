@@ -202,7 +202,7 @@ func (hdl *ExampleHandler) Handle(evt Event) {
 		//code specific to this Event handler
 	}
 }
-func (*ExampleHandler) ListenTo(evt Event) bool {
+func (*ExampleHandler) ListensTo(evt Event) bool {
 	_, listens := evt.(*ExampleEvent)
 	return listens
 }

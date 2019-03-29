@@ -24,6 +24,7 @@ func NewBus() *Bus {
 
 // ConcurrentPoolSize may optionally be used to tweak the worker pool size for concurrent events.
 // It can only be adjusted *before* the bus is initialized.
+// By default it uses the amount returned by runtime.GOMAXPROCS(0).
 func (bus *Bus) ConcurrentPoolSize(concurrentPoolSize int) {
 	bus.concurrentPoolSize = concurrentPoolSize
 }
