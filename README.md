@@ -1,5 +1,5 @@
 # [Go](https://golang.org/) Event Bus
-An Event Bus developed with a focus on performance and robustness.
+An event bus developed with a focus on performance and robustness.
 
 [![Build Status](https://travis-ci.org/io-da/event.svg?branch=master)](https://travis-ci.org/io-da/event)
 [![Maintainability](https://api.codeclimate.com/v1/badges/f256105248459e250292/maintainability)](https://codeclimate.com/github/io-da/event/maintainability) 
