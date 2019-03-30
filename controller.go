@@ -5,19 +5,19 @@ import (
 	"sync/atomic"
 )
 
-const topicsCapacity = 10
-
 type controller struct {
 	topics                 []*topic
+	topicBuffer            int
 	concurrentQueuedEvents chan Event
 	workers                *uint32
 	closed                 chan bool
 	handlers               []Handler
 }
 
-func newController(concurrentPoolSize int, handlers []Handler) *controller {
+func newController(concurrentPoolSize int, topicsCapacity int, topicBuffer int, handlers []Handler) *controller {
 	ctrl := &controller{
 		topics:                 make([]*topic, 0, topicsCapacity),
+		topicBuffer:            topicBuffer,
 		concurrentQueuedEvents: make(chan Event, topicBuffer),
 		workers:                new(uint32),
 		closed:                 make(chan bool),
@@ -97,7 +97,7 @@ func (ctrl *controller) topic(evt Topic) *topic {
 			return tpc
 		}
 	}
-	tpc := newTopic(evt.Topic(), &ctrl.handlers)
+	tpc := newTopic(evt.Topic(), ctrl.topicBuffer, &ctrl.handlers)
 	ctrl.addTopic(tpc)
 	return tpc
 }

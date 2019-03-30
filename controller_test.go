@@ -8,7 +8,7 @@ import (
 
 func TestController_Handle(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	ctrl := newController(0, []Handler{&testHandler1{wg: wg}})
+	ctrl := newController(0, 10, 100, []Handler{&testHandler1{wg: wg}})
 	evt := &testEvent1{}
 	wg.Add(1)
 	ctrl.handle(evt)
@@ -25,7 +25,7 @@ func TestController_Handle(t *testing.T) {
 
 func TestController_Len(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	ctrl := newController(0, []Handler{&testHandler1{wg: wg}})
+	ctrl := newController(0, 10, 100, []Handler{&testHandler1{wg: wg}})
 	if ctrl.len() != 0 {
 		t.Error("Unexpected controller length.")
 	}
@@ -39,7 +39,8 @@ func TestController_Len(t *testing.T) {
 func TestController_Cap(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	hdl := &testHandler1{wg: wg}
-	ctrl := newController(0, []Handler{hdl})
+	topicsCapacity := 10
+	ctrl := newController(0, topicsCapacity, 100, []Handler{hdl})
 	if ctrl.cap() != topicsCapacity {
 		t.Error("Unexpected controller capacity.")
 	}
@@ -66,7 +67,7 @@ func TestController_Cap(t *testing.T) {
 }
 
 func TestController_Empty(t *testing.T) {
-	ctrl := newController(0, []Handler{})
+	ctrl := newController(0, 10, 100, []Handler{})
 	if !ctrl.empty() {
 		t.Error("Should be empty.")
 	}

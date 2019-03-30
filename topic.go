@@ -2,24 +2,19 @@ package event
 
 import "log"
 
-const topicBuffer = 100
-
 type topic struct {
 	name         string
-	idx          int
 	queuedEvents chan Event
 	closed       chan bool
-
-	handlers *[]Handler
+	handlers     *[]Handler
 }
 
-func newTopic(name string, handlers *[]Handler) *topic {
+func newTopic(name string, buffer int, handlers *[]Handler) *topic {
 	tpc := &topic{
 		name:         name,
-		queuedEvents: make(chan Event, topicBuffer),
+		queuedEvents: make(chan Event, buffer),
 		closed:       make(chan bool),
-
-		handlers: handlers,
+		handlers:     handlers,
 	}
 
 	go tpc.worker(tpc.queuedEvents, tpc.closed)
