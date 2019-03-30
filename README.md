@@ -111,13 +111,14 @@ bus.ConcurrentPoolSize(10)
 ```
 If used this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
 In some scenarios increasing the value can drastically improve performance.  
-By default it will use the number returned from ```runtime.GOMAXPROCS(0)```.  
+It defaults to the value returned by ```runtime.GOMAXPROCS(0)```.  
   
 When aware of the total amount of different topics available in the application. Then that value should be provided with this function.
 ```go
 bus.TopicsCapacity(10)
 ```
 If used this function **must** be called **before** the _Bus_ is initialized.  
+It defaults to 10.  
   
 The buffer size of topics can also be adjusted.  
 Depending on the use case this value may greatly impact performance.
@@ -125,6 +126,7 @@ Depending on the use case this value may greatly impact performance.
 bus.TopicBuffer(100)
 ```
 If used this function **must** be called **before** the _Bus_ is initialized.  
+It defaults to 100.  
 
 #### Shutting Down
 The _Bus_ also provides a shutdown function that attempts to gracefully stop the event bus and all its routines.
