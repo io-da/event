@@ -19,7 +19,7 @@ An event bus developed with a focus on performance.
 
 ## Introduction
 This library is intended for anyone looking to emit some events in their application. And it achieves this objective using an event bus architecture.  
-The _Bus_ will take advantage of [goroutines](https://gobyexample.com/goroutines) to attempt handling the events in **non-blocking** manner.  
+The _Bus_ will use _workers_ ([goroutines](https://gobyexample.com/goroutines)) to attempt handling the events in **non-blocking** manner.  
 
 ![Flowchart](event-bus-flowchart.png?raw=true "Flowchart")
 
@@ -47,7 +47,7 @@ func (*ExampleEvent) Topic() string {
 }
 ```
 Events that **do not** implement the _Topic_ interface will be considered concurrent.  
-Concurrent events will take advantage of [goroutines](https://gobyexample.com/goroutines) to be handled faster, but their **emission order will not be respected**.
+The _Bus_ take advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
 
 ### Handlers
 Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
