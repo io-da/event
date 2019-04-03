@@ -18,7 +18,7 @@ An event bus developed with a focus on performance.
 4. [Examples](#Examples)
 
 ### Flowchart
-![Flowchart](event-bus-diagram.png?raw=true "Flowchart")
+![Flowchart](event-bus-flowchart.png?raw=true "Flowchart")
 
 ## Usage
 
