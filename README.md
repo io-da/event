@@ -19,7 +19,8 @@ An event bus developed with a focus on performance.
 
 ## Introduction
 This library is intended for anyone looking to emit some events in their application. And it achieves this objective using an event bus architecture.  
-The _Bus_ will take advantage of [goroutines](https://gobyexample.com/goroutines) to attempt handling the events in **non-blocking** manner.
+The _Bus_ will take advantage of [goroutines](https://gobyexample.com/goroutines) to attempt handling the events in **non-blocking** manner.  
+
 ![Flowchart](event-bus-flowchart.png?raw=true "Flowchart")
 
 ## Getting Started
