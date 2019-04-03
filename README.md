@@ -17,10 +17,12 @@ An event bus developed with a focus on performance.
    1. [Shutting Down](#Shutting-Down)  
 4. [Examples](#Examples)
 
-### Flowchart
+## Introduction
+This library is intended for anyone looking to emit some events in their application. And it achieves this objective using an event bus architecture.  
+The _Bus_ will take advantage of [goroutines](https://gobyexample.com/goroutines) to attempt handling the events in **non-blocking** manner.
 ![Flowchart](event-bus-flowchart.png?raw=true "Flowchart")
 
-## Usage
+## Getting Started
 
 ### Events
 Events can be of any type. Ideally they should contain immutable data.
@@ -139,7 +141,7 @@ bus.Shutdown()
 ```  
 **This function will block until the bus is fully stopped.**
 
-### Examples
+## Examples
 An event handler that listens to multiple event types.
 ```go
 type ExampleHandler2 struct {
