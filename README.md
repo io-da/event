@@ -9,14 +9,20 @@ An event bus developed with a focus on performance and robustness.
 ## Installation
 ``` go get github.com/io-da/event ```
 
-## Usage
+## Overview
 
+1. [Overview](#Overview)
 1. [Events](#Events)
 2. [Handlers](#Handlers)
 3. [The Bus](#The-Bus)  
    1. [Tweaking Performance](#Tweaking-Performance)  
    1. [Shutting Down](#Shutting-Down)  
 4. [Examples](#Examples)
+
+### Diagram
+![Diagram](event-bus-diagram.png?raw=true "Diagram")
+
+## Usage
 
 ### Events
 Events can be of any type. Ideally they should contain immutable data.
