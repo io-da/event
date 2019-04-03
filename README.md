@@ -1,5 +1,5 @@
 # [Go](https://golang.org/) Event Bus
-An event bus developed with a focus on performance and robustness.
+An event bus developed with a focus on performance.
 
 [![Build Status](https://travis-ci.org/io-da/event.svg?branch=master)](https://travis-ci.org/io-da/event)
 [![Maintainability](https://api.codeclimate.com/v1/badges/f256105248459e250292/maintainability)](https://codeclimate.com/github/io-da/event/maintainability) 
@@ -10,8 +10,6 @@ An event bus developed with a focus on performance and robustness.
 ``` go get github.com/io-da/event ```
 
 ## Overview
-
-1. [Overview](#Overview)
 1. [Events](#Events)
 2. [Handlers](#Handlers)
 3. [The Bus](#The-Bus)  
@@ -19,8 +17,8 @@ An event bus developed with a focus on performance and robustness.
    1. [Shutting Down](#Shutting-Down)  
 4. [Examples](#Examples)
 
-### Diagram
-![Diagram](event-bus-diagram.png?raw=true "Diagram")
+### Flowchart
+![Flowchart](event-bus-diagram.png?raw=true "Flowchart")
 
 ## Usage
 
