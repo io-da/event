@@ -1,6 +1,7 @@
 package event
 
 import (
+	"log"
 	"runtime"
 	"sync/atomic"
 )
@@ -11,8 +12,13 @@ type Bus struct {
 	concurrentPoolSize int
 	topicsCapacity     int
 	topicBuffer        int
-	controller         *controller
 	shuttingDown       *uint32
+
+	workers                *uint32
+	handlers               []Handler
+	topics                 []*topic
+	concurrentQueuedEvents chan Event
+	closed                 chan bool
 }
 
 // NewBus instantiates the Bus struct.
@@ -23,6 +29,8 @@ func NewBus() *Bus {
 		topicsCapacity:     10,
 		topicBuffer:        100,
 		shuttingDown:       new(uint32),
+		workers:            new(uint32),
+		closed:             make(chan bool),
 	}
 }
 
@@ -51,14 +59,29 @@ func (bus *Bus) TopicBuffer(topicBuffer int) {
 
 // Initialize the event bus
 func (bus *Bus) Initialize(hdls ...Handler) {
-	// start the controller
-	bus.controller = newController(bus.concurrentPoolSize, bus.topicsCapacity, bus.topicBuffer, hdls)
+	//topics:                 make([]*topic, 0, topicsCapacity),
+	//	concurrentQueuedEvents: make(chan Event, topicBuffer),
+	//		handlers:               handlers,
+	bus.handlers = hdls
+	bus.topics = make([]*topic, 0, bus.topicsCapacity)
+	bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
+
+	for i := 0; i < bus.concurrentPoolSize; i++ {
+		bus.workerUp()
+		go bus.worker(bus.concurrentQueuedEvents, bus.closed)
+	}
 }
 
 // Emit an Event to the event bus.
 func (bus *Bus) Emit(evt Event) {
-	if !bus.isShuttingDown() {
-		bus.controller.handle(evt)
+	if evt != nil && !bus.isShuttingDown() {
+		if evt, implements := evt.(Topic); implements {
+			tpc := bus.topic(evt)
+			tpc.handle(evt)
+			return
+		}
+
+		bus.concurrentQueuedEvents <- evt
 	}
 }
 
@@ -66,9 +89,72 @@ func (bus *Bus) Emit(evt Event) {
 // *Events emitted while shutting down will be disregarded*.
 func (bus *Bus) Shutdown() {
 	atomic.StoreUint32(bus.shuttingDown, 1)
-	bus.controller.shutdown()
+	bus.shutdown()
 }
+
+//-----Private Functions------//
 
 func (bus *Bus) isShuttingDown() bool {
 	return atomic.LoadUint32(bus.shuttingDown) == 1
+}
+
+func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
+	for evt := range queuedEvents {
+		if evt == nil {
+			log.Println("eventbus concurrent worker shutting down")
+			break
+		}
+		for _, hdl := range bus.handlers {
+			if hdl.ListensTo(evt) {
+				hdl.Handle(evt)
+			}
+		}
+	}
+	closed <- true
+}
+
+func (bus *Bus) workerUp() {
+	atomic.AddUint32(bus.workers, 1)
+}
+
+func (bus *Bus) workerDown() {
+	atomic.AddUint32(bus.workers, ^uint32(0))
+}
+
+func (bus *Bus) shutdown() {
+	for atomic.LoadUint32(bus.workers) > 0 {
+		bus.concurrentQueuedEvents <- nil
+		<-bus.closed
+		bus.workerDown()
+	}
+	for _, tpc := range bus.topics {
+		tpc.shutdown()
+	}
+}
+
+func (bus *Bus) topic(evt Topic) *topic {
+	for _, tpc := range bus.topics {
+		if tpc.name == evt.Topic() {
+			return tpc
+		}
+	}
+	tpc := newTopic(evt.Topic(), bus.topicBuffer, &bus.handlers)
+	bus.addTopic(tpc)
+	return tpc
+}
+
+func (bus *Bus) addTopic(tpc *topic) {
+	if len(bus.topics) == cap(bus.topics) {
+		bus.doubleCapacity()
+	}
+	bus.topics = append(bus.topics, tpc)
+}
+
+func (bus *Bus) doubleCapacity() {
+	l := len(bus.topics)
+	c := cap(bus.topics) * 2
+
+	nTpc := make([]*topic, l, c)
+	copy(nTpc, bus.topics)
+	bus.topics = nTpc
 }

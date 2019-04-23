@@ -16,7 +16,7 @@ func TestBus_Initialize(t *testing.T) {
 	hdl2 := &testHandler2{}
 
 	bus.Initialize(hdl, hdl2)
-	if len(bus.controller.handlers) != 2 {
+	if len(bus.handlers) != 2 {
 		t.Error("Unexpected number of handlers.")
 	}
 }
@@ -25,7 +25,7 @@ func TestBus_TopicsCapacity(t *testing.T) {
 	bus := NewBus()
 	bus.TopicsCapacity(100)
 	bus.Initialize()
-	if cap(bus.controller.topics) != 100 {
+	if cap(bus.topics) != 100 {
 		t.Error("Unexpected topic slice capacity.")
 	}
 }
@@ -34,7 +34,7 @@ func TestBus_TopicBuffer(t *testing.T) {
 	bus := NewBus()
 	bus.TopicBuffer(1000)
 	bus.Initialize()
-	if cap(bus.controller.concurrentQueuedEvents) != 1000 {
+	if cap(bus.concurrentQueuedEvents) != 1000 {
 		t.Error("Unexpected topic queue capacity.")
 	}
 }
