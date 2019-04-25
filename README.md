@@ -27,7 +27,7 @@ The _Bus_ will use _workers_ ([goroutines](https://gobyexample.com/goroutines)) 
 ## Getting Started
 
 ### Events
-Events can be of any type. Ideally they should contain immutable data.
+Events can be of any type. Ideally they should contain immutable data.  
 An event may optionally implement the _Topic_ interface. If it does, then it will be handled within that topic.   
 ```go
 type Topic interface {
@@ -38,7 +38,7 @@ Any event _emitted_ within the same topic is **guaranteed to be _handled_ respec
 However, this order is **not guaranteed across different topics**.  
 A topic is just a string (the name), the event bus will take care of the rest.  
 Events that **do not** implement the _Topic_ interface will be considered concurrent.  
-The _Bus_ take advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
+The _Bus_ takes advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
 
 ### Handlers
 Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
