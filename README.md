@@ -201,7 +201,7 @@ type FooBarHandler struct {
 func (hdl *FooBarHandler) Handle(evt Event) {
     // an other way to assert the type of the event. More convenient for handlers that expect different event types.
     switch evt := evt.(type) {
-    case *Foo, *FooBar:
+    case *Foo, FooBar:
         // handler logic
     }
 }
@@ -209,7 +209,7 @@ func (hdl *FooBarHandler) Handle(evt Event) {
 func (*FooBarHandler) ListensTo(evt Event) bool {
     // an other way to assert the type of the event. More convenient for handlers that expect different event types.
     switch evt := evt.(type) {
-    case *Foo, *FooBar:
+    case *Foo, FooBar:
         return true
     }
     return false
@@ -232,7 +232,7 @@ Initialization and usage of the exemplified events and handlers
     
     // emit events
     bus.Emit(&Foo{})
-    bus.Emit(&FooBar{})
+    bus.Emit(FooBar("foobar"))
 ```
 
 ## Contributing
