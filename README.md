@@ -28,11 +28,6 @@ The _Bus_ will use _workers_ ([goroutines](https://gobyexample.com/goroutines)) 
 
 ### Events
 Events can be of any type. Ideally they should contain immutable data.
-```go
-type ExampleEvent struct{
-    someValue string
-}
-```
 An event may optionally implement the _Topic_ interface. If it does, then it will be handled within that topic.   
 ```go
 type Topic interface {
@@ -41,76 +36,18 @@ type Topic interface {
 ```
 Any event _emitted_ within the same topic is **guaranteed to be _handled_ respecting their order of emission.**  
 However, this order is **not guaranteed across different topics**.  
-A topic is just a string (the name), the event bus will take care of the rest.
-```go
-func (*ExampleEvent) Topic() string { 
-    return "example-topic" 
-}
-```
+A topic is just a string (the name), the event bus will take care of the rest.  
 Events that **do not** implement the _Topic_ interface will be considered concurrent.  
 The _Bus_ take advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
 
 ### Handlers
 Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
-```go
-type Handler interface {
-    ListensTo(evt Event) bool
-    Handle(evt Event)
-}
-```
-
-```go
-// An event handler
-type ExampleHandler struct {
-}
-
-// Handle performs the actual handler specific logic
-func (hdl *ExampleHandler) Handle(evt Event) {
-	// type assert to the expected event type
-    if evt, listens := evt.(*ExampleEvent); listens {
-        // handler logic
-    }
-}
-
-// ListensTo verifies if the event is expected by this handler before any logic
-func (*ExampleHandler) ListensTo(evt Event) bool {
-	// type assert to the expected event type
-    _, listens := evt.(*ExampleEvent)
-    return listens
-}
-```
 
 ### The Bus
 _Bus_ is the _struct_ that will be used to emit all the application's events.  
 The _Bus_ should be instantiated and initialized on application startup. The initialization is separated from the instantiation for dependency injection purposes.  
 The application should instantiate the _Bus_ once and then use it's reference in all the places that will be emitting events.  
 **The order the handlers are provided to the _Bus_ is always respected.**
-```go
-import (
-    "github.com/io-da/event"
-)
-
-func main() {
-    // instantiate the bus (returns *event.Bus)
-    bus := event.NewBus()
-    
-    // optional
-    bus.ConcurrentPoolSize(4)
-    
-    // initialize the bus with all of the application's event handlers
-    bus.Initialize(
-    	// this handler will always be executed first
-    	&ExampleHandler{},
-    	// this one second
-    	&ExampleHandler2{},
-    	// and this one third
-    	&ExampleHandler3{},
-    )
-    
-    // emit events
-    bus.Emit(&ExampleEvent{})
-}
-```
 
 #### Tweaking Performance
 For applications that take advantage of concurrent events, the number of concurrent workers can be adjusted.
@@ -166,14 +103,17 @@ The event handlers use ```time.Sleep(time.Nanosecond * 200)``` for simulation pu
 ## Examples
 
 #### Example Events
+A simple ```struct``` event.
 ```go
 type Foo struct {
     bar string
 }
 ```
 
+A ```string``` event that implements the _Topic_ interface.
 ```go
 type FooBar string
+func (FooBar) Topic() string { return "foo-bar" }
 ```
 
 #### Example Handlers
@@ -219,6 +159,11 @@ func (*FooBarHandler) ListensTo(evt Event) bool {
 #### Putting it together
 Initialization and usage of the exemplified events and handlers
 ```go
+import (
+    "github.com/io-da/event"
+)
+
+func main() {
     // instantiate the bus (returns *event.Bus)
     bus := event.NewBus()
     
@@ -233,6 +178,7 @@ Initialization and usage of the exemplified events and handlers
     // emit events
     bus.Emit(&Foo{})
     bus.Emit(FooBar("foobar"))
+}
 ```
 
 ## Contributing
