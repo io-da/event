@@ -14,8 +14,9 @@ An event bus developed with a focus on performance.
 2. [Handlers](#Handlers)
 3. [The Bus](#The-Bus)  
    1. [Tweaking Performance](#Tweaking-Performance)  
-   1. [Shutting Down](#Shutting-Down)  
-4. [Examples](#Examples)
+   2. [Shutting Down](#Shutting-Down)  
+4. [Benchmarks](#Benchmarks)
+5. [Examples](#Examples)
 
 ## Introduction
 This library is intended for anyone looking to emit some events in their application. And it achieves this objective using an event bus architecture.  
@@ -142,43 +143,96 @@ bus.Shutdown()
 ```  
 **This function will block until the bus is fully stopped.**
 
+## Benchmarks
+All the benchmarks are performed against batches of 1 million events.  
+All the ordered events belong to the same topic.
+
+#### Benchmarks without handler behavior
+The event handlers are empty to test solely the bus overhead.  
+
+| Benchmark Type | Time |
+| :--- | :---: |
+| Ordered Events | 121 ns/op |
+| Concurrent Events | 120 ns/op |
+
+#### Benchmarks with simulated handler behavior
+The event handlers use ```time.Sleep(time.Nanosecond * 200)``` for simulation purposes.  
+
+| Benchmark Type | Time |
+| :--- | :---: |
+| Ordered Events | 796 ns/op |
+| Concurrent Events | 501 ns/op |
+
 ## Examples
-An event handler that listens to multiple event types.
+
+#### Example Events
 ```go
-type ExampleHandler2 struct {
+type Foo struct {
+    bar string
+}
+```
+
+```go
+type FooBar string
+```
+
+#### Example Handlers
+
+An event handler that logs every event emitted.
+```go
+type LoggerHandler struct {
 }
 
-func (hdl *ExampleHandler2) Handle(evt Event) {
-	// an other way to assert the type of the event. More convenient for handlers that expect different event types.
+func (hdl *LoggerHandler) Handle(evt Event) {
+    log.Printf("event %T emitted", evt)
+}
+
+func (*LoggerHandler) ListensTo(evt Event) bool {
+    // listen to all event types
+    return true
+}
+```
+
+An event handler that listens to multiple event types.
+```go
+type FooBarHandler struct {
+}
+
+func (hdl *FooBarHandler) Handle(evt Event) {
+    // an other way to assert the type of the event. More convenient for handlers that expect different event types.
     switch evt := evt.(type) {
-    case *ExampleEvent, *ExampleEvent2:
+    case *Foo, *FooBar:
         // handler logic
     }
 }
 
-func (*ExampleHandler2) ListensTo(evt Event) bool {
-	// an other way to assert the type of the event. More convenient for handlers that expect different event types.
+func (*FooBarHandler) ListensTo(evt Event) bool {
+    // an other way to assert the type of the event. More convenient for handlers that expect different event types.
     switch evt := evt.(type) {
-    case *ExampleEvent, *ExampleEvent2:
+    case *Foo, *FooBar:
         return true
     }
     return false
 }
 ```
 
-An event handler that logs every event emitted.
+#### Putting it together
+Initialization and usage of the exemplified events and handlers
 ```go
-type ExampleEventLogger struct {
-}
-
-func (hdl *ExampleEventLogger) Handle(evt Event) {
-    log.Printf("event %T emitted", evt)
-}
-
-func (*ExampleEventLogger) ListensTo(evt Event) bool {
-    // listen to all event types
-    return true
-}
+    // instantiate the bus (returns *event.Bus)
+    bus := event.NewBus()
+    
+    // initialize the bus with all of the application's event handlers
+    bus.Initialize(
+    	// this handler will always be executed first
+        &LoggerHandler{},
+        // this one second
+        &FooBarHandler{},
+    )
+    
+    // emit events
+    bus.Emit(&Foo{})
+    bus.Emit(&FooBar{})
 ```
 
 ## Contributing

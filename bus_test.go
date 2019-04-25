@@ -49,7 +49,7 @@ func TestBus_Emit(t *testing.T) {
 	bus.Initialize(hdl, hdl2)
 	bus.Emit(&testEvent1{})
 	bus.Emit(&testEvent2{})
-	bus.Emit(&testEvent3{})
+	bus.Emit(testEvent3("test"))
 
 	timeout := time.AfterFunc(time.Second*10, func() {
 		t.Fatal("The events should have been handled by now.")
@@ -180,28 +180,29 @@ func TestBus_ConcurrentEvents(t *testing.T) {
 	}
 }
 
-func BenchmarkBus_Handling1KOrderedEvents(b *testing.B) {
+func BenchmarkBus_Handling1MillionOrderedEvents(b *testing.B) {
 	bus := NewBus()
 	wg := &sync.WaitGroup{}
 
 	bus.Initialize(&benchmarkOrderedEventHandler{wg: wg})
 	for n := 0; n < b.N; n++ {
-		wg.Add(1000)
-		for i := 0; i < 1000; i++ {
+		wg.Add(1000000)
+		for i := 0; i < 1000000; i++ {
 			bus.Emit(&benchmarkOrderedEvent{})
 		}
 		wg.Wait()
 	}
 }
 
-func BenchmarkBus_Handling1KConcurrentEvents(b *testing.B) {
+func BenchmarkBus_Handling1MillionConcurrentEvents(b *testing.B) {
 	bus := NewBus()
+	bus.ConcurrentPoolSize(1000)
 	wg := &sync.WaitGroup{}
 
 	bus.Initialize(&benchmarkConcurrentEventHandler{wg: wg})
 	for n := 0; n < b.N; n++ {
-		wg.Add(1000)
-		for i := 0; i < 1000; i++ {
+		wg.Add(1000000)
+		for i := 0; i < 1000000; i++ {
 			bus.Emit(&benchmarkConcurrentEvent{})
 		}
 		wg.Wait()

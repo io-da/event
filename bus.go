@@ -9,11 +9,10 @@ import (
 // Bus is the only struct exported and required for the event bus usage.
 // The Bus should be instantiated using the NewBus function.
 type Bus struct {
-	concurrentPoolSize int
-	topicsCapacity     int
-	topicBuffer        int
-	shuttingDown       *uint32
-
+	concurrentPoolSize     int
+	topicsCapacity         int
+	topicBuffer            int
+	shuttingDown           *uint32
 	workers                *uint32
 	handlers               []Handler
 	topics                 []*topic
@@ -59,13 +58,9 @@ func (bus *Bus) TopicBuffer(topicBuffer int) {
 
 // Initialize the event bus
 func (bus *Bus) Initialize(hdls ...Handler) {
-	//topics:                 make([]*topic, 0, topicsCapacity),
-	//	concurrentQueuedEvents: make(chan Event, topicBuffer),
-	//		handlers:               handlers,
 	bus.handlers = hdls
 	bus.topics = make([]*topic, 0, bus.topicsCapacity)
 	bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
-
 	for i := 0; i < bus.concurrentPoolSize; i++ {
 		bus.workerUp()
 		go bus.worker(bus.concurrentQueuedEvents, bus.closed)
@@ -80,7 +75,6 @@ func (bus *Bus) Emit(evt Event) {
 			tpc.handle(evt)
 			return
 		}
-
 		bus.concurrentQueuedEvents <- evt
 	}
 }

@@ -20,9 +20,9 @@ func (*testEvent2) Topic() string { return "test:topic-2" }
 
 //------
 
-type testEvent3 struct{}
+type testEvent3 string
 
-func (*testEvent3) Topic() string { return "test:topic-2" }
+func (testEvent3) Topic() string { return "test:topic-2" }
 
 //------
 
@@ -111,13 +111,13 @@ type testHandler2 struct {
 
 func (hdl *testHandler2) Handle(evt Event) {
 	switch evt.(type) {
-	case *testEvent2, *testEvent3, *testEventDynamicTopic:
+	case *testEvent2, testEvent3, *testEventDynamicTopic:
 		hdl.wg.Done()
 	}
 }
 func (*testHandler2) ListensTo(evt Event) bool {
 	switch evt.(type) {
-	case *testEvent2, *testEvent3, *testEventDynamicTopic:
+	case *testEvent2, testEvent3, *testEventDynamicTopic:
 		return true
 	}
 	return false
@@ -165,7 +165,7 @@ type testEventOrderHandler struct {
 func (hdl *testEventOrderHandler) Handle(evt Event) {
 	if evt, listens := evt.(eventOrder); listens {
 		// delay the handling of the Event to simulate some sort of behavior.
-		time.Sleep(time.Nanosecond * 300)
+		time.Sleep(time.Nanosecond * 200)
 
 		if evt.Position() != hdl.currentPosition() {
 			atomic.StoreInt32(hdl.unordered, 1)
@@ -196,7 +196,7 @@ type benchmarkOrderedEventHandler struct {
 
 func (hdl *benchmarkOrderedEventHandler) Handle(evt Event) {
 	if _, listens := evt.(*benchmarkOrderedEvent); listens {
-		time.Sleep(time.Nanosecond * 300)
+		time.Sleep(time.Nanosecond * 200)
 		hdl.wg.Done()
 	}
 }
@@ -213,7 +213,7 @@ type benchmarkConcurrentEventHandler struct {
 
 func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) {
 	if _, listens := evt.(*benchmarkConcurrentEvent); listens {
-		time.Sleep(time.Nanosecond * 300)
+		time.Sleep(time.Nanosecond * 200)
 		hdl.wg.Done()
 	}
 }
