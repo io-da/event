@@ -47,7 +47,7 @@ Handlers are any type that implements the _Handler_ interface. Handlers must be 
 _Bus_ is the _struct_ that will be used to emit all the application's events.  
 The _Bus_ should be instantiated and initialized on application startup. The initialization is separated from the instantiation for dependency injection purposes.  
 The application should instantiate the _Bus_ once and then use it's reference in all the places that will be emitting events.  
-**The order the handlers are provided to the _Bus_ is always respected.**
+**The order in which the handlers are provided to the _Bus_ is always respected.**
 
 #### Tweaking Performance
 For applications that take advantage of concurrent events, the number of concurrent workers can be adjusted.
