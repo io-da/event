@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-//------test events------//
+//------Events------//
 
 type testEvent1 struct{}
 
@@ -87,7 +87,7 @@ func (evt *benchmarkOrderedEvent) Topic() string { return "benchmark:ordered" }
 type benchmarkConcurrentEvent struct {
 }
 
-//------test handlers------//
+//------Handlers------//
 
 type testHandler1 struct {
 	wg *sync.WaitGroup

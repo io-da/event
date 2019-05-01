@@ -11,6 +11,7 @@ type Bus struct {
 	concurrentPoolSize     int
 	topicsCapacity         int
 	topicBuffer            int
+	initialized            *uint32
 	shuttingDown           *uint32
 	workers                *uint32
 	handlers               []Handler
@@ -26,6 +27,7 @@ func NewBus() *Bus {
 		concurrentPoolSize: runtime.GOMAXPROCS(0),
 		topicsCapacity:     10,
 		topicBuffer:        100,
+		initialized:        new(uint32),
 		shuttingDown:       new(uint32),
 		workers:            new(uint32),
 		closed:             make(chan bool),
@@ -36,7 +38,9 @@ func NewBus() *Bus {
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to the value returned by runtime.GOMAXPROCS(0).
 func (bus *Bus) ConcurrentPoolSize(concurrentPoolSize int) {
-	bus.concurrentPoolSize = concurrentPoolSize
+	if !bus.isInitialized() {
+		bus.concurrentPoolSize = concurrentPoolSize
+	}
 }
 
 // TopicsCapacity may optionally be provided to tweak the starting capacity on the topic slice.
@@ -44,7 +48,9 @@ func (bus *Bus) ConcurrentPoolSize(concurrentPoolSize int) {
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to 10.
 func (bus *Bus) TopicsCapacity(topicsCapacity int) {
-	bus.topicsCapacity = topicsCapacity
+	if !bus.isInitialized() {
+		bus.topicsCapacity = topicsCapacity
+	}
 }
 
 // TopicBuffer may optionally be provided to tweak the buffer size of topics.
@@ -52,17 +58,22 @@ func (bus *Bus) TopicsCapacity(topicsCapacity int) {
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to 100.
 func (bus *Bus) TopicBuffer(topicBuffer int) {
-	bus.topicBuffer = topicBuffer
+	if !bus.isInitialized() {
+		bus.topicBuffer = topicBuffer
+	}
 }
 
 // Initialize the event bus.
 func (bus *Bus) Initialize(hdls ...Handler) {
-	bus.handlers = hdls
-	bus.topics = make([]*topic, 0, bus.topicsCapacity)
-	bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
-	for i := 0; i < bus.concurrentPoolSize; i++ {
-		bus.workerUp()
-		go bus.worker(bus.concurrentQueuedEvents, bus.closed)
+	if bus.initialize() {
+		bus.handlers = hdls
+		bus.topics = make([]*topic, 0, bus.topicsCapacity)
+		bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
+		for i := 0; i < bus.concurrentPoolSize; i++ {
+			bus.workerUp()
+			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
+		}
+		atomic.CompareAndSwapUint32(bus.shuttingDown, 1, 0)
 	}
 }
 
@@ -81,11 +92,20 @@ func (bus *Bus) Emit(evt Event) {
 // Shutdown the event bus gracefully.
 // *Events emitted while shutting down will be disregarded*.
 func (bus *Bus) Shutdown() {
-	atomic.StoreUint32(bus.shuttingDown, 1)
-	bus.shutdown()
+	if atomic.CompareAndSwapUint32(bus.shuttingDown, 0, 1) {
+		bus.shutdown()
+	}
 }
 
 //-----Private Functions------//
+
+func (bus *Bus) initialize() bool {
+	return atomic.CompareAndSwapUint32(bus.initialized, 0, 1)
+}
+
+func (bus *Bus) isInitialized() bool {
+	return atomic.LoadUint32(bus.initialized) == 1
+}
 
 func (bus *Bus) isShuttingDown() bool {
 	return atomic.LoadUint32(bus.shuttingDown) == 1
@@ -120,6 +140,7 @@ func (bus *Bus) shutdown() {
 	for _, tpc := range bus.topics {
 		tpc.shutdown()
 	}
+	atomic.CompareAndSwapUint32(bus.initialized, 1, 0)
 }
 
 func (bus *Bus) topic(evt Topic) *topic {

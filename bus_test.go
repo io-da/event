@@ -2,8 +2,6 @@ package event
 
 import (
 	"fmt"
-	"io/ioutil"
-	"log"
 	"math/rand"
 	"sync"
 	"testing"
@@ -61,14 +59,13 @@ func TestBus_Emit(t *testing.T) {
 
 func TestBus_Shutdown(t *testing.T) {
 	bus := NewBus()
-	wg := &sync.WaitGroup{}
 	hdl := &emptyHandler{}
 
-	log.SetOutput(ioutil.Discard)
-	bus.Initialize(hdl)
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	bus.Emit(&testEvent1{})
 
+	bus.Initialize(hdl)
+	bus.Emit(&testEvent1{})
 	time.AfterFunc(time.Nanosecond, func() {
 		// graceful shutdown
 		bus.Shutdown()

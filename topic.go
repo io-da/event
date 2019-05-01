@@ -1,7 +1,5 @@
 package event
 
-import "log"
-
 type topic struct {
 	name         string
 	queuedEvents chan Event
@@ -29,7 +27,6 @@ func (tpc *topic) handle(evt Event) {
 func (tpc *topic) worker(queuedEvents <-chan Event, closed chan<- bool) {
 	for evt := range queuedEvents {
 		if evt == nil {
-			log.Printf("eventbus topic worker \"%s\" shutting down", tpc.name)
 			break
 		}
 		for _, hdl := range *tpc.handlers {
