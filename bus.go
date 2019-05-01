@@ -1,7 +1,6 @@
 package event
 
 import (
-	"log"
 	"runtime"
 	"sync/atomic"
 )
@@ -56,7 +55,7 @@ func (bus *Bus) TopicBuffer(topicBuffer int) {
 	bus.topicBuffer = topicBuffer
 }
 
-// Initialize the event bus
+// Initialize the event bus.
 func (bus *Bus) Initialize(hdls ...Handler) {
 	bus.handlers = hdls
 	bus.topics = make([]*topic, 0, bus.topicsCapacity)
@@ -95,7 +94,6 @@ func (bus *Bus) isShuttingDown() bool {
 func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 	for evt := range queuedEvents {
 		if evt == nil {
-			log.Println("eventbus concurrent worker shutting down")
 			break
 		}
 		for _, hdl := range bus.handlers {
