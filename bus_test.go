@@ -196,7 +196,6 @@ func BenchmarkBus_Handling1MillionOrderedEvents(b *testing.B) {
 
 func BenchmarkBus_Handling1MillionConcurrentEvents(b *testing.B) {
 	bus := NewBus()
-	bus.ConcurrentPoolSize(1000)
 	wg := &sync.WaitGroup{}
 
 	bus.Initialize(&benchmarkConcurrentEventHandler{wg: wg})

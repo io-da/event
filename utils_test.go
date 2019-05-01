@@ -98,10 +98,6 @@ func (hdl *testHandler1) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testHandler1) ListensTo(evt Event) bool {
-	_, listens := evt.(*testEvent1)
-	return listens
-}
 
 //------
 
@@ -115,13 +111,6 @@ func (hdl *testHandler2) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*testHandler2) ListensTo(evt Event) bool {
-	switch evt.(type) {
-	case *testEvent2, testEvent3, *testEventDynamicTopic:
-		return true
-	}
-	return false
-}
 
 //------
 
@@ -130,10 +119,6 @@ type emptyHandler struct {
 
 func (hdl *emptyHandler) Handle(evt Event) {
 	// handles everything
-}
-func (*emptyHandler) ListensTo(evt Event) bool {
-	// listens to everything
-	return true
 }
 
 //------
@@ -148,10 +133,6 @@ func (hdl *testHandlerOrder) Handle(evt Event) {
 		evt.HandlerPosition(hdl.position)
 		hdl.wg.Done()
 	}
-}
-func (*testHandlerOrder) ListensTo(evt Event) bool {
-	_, listens := evt.(*testHandlerOrderEvent)
-	return listens
 }
 
 //------
@@ -173,10 +154,6 @@ func (hdl *testEventOrderHandler) Handle(evt Event) {
 		hdl.incrementPosition()
 		hdl.wg.Done()
 	}
-}
-func (*testEventOrderHandler) ListensTo(evt Event) bool {
-	_, listens := evt.(eventOrder)
-	return listens
 }
 func (hdl *testEventOrderHandler) IsUnordered() bool {
 	return atomic.LoadInt32(hdl.unordered) == 1
@@ -200,10 +177,6 @@ func (hdl *benchmarkOrderedEventHandler) Handle(evt Event) {
 		hdl.wg.Done()
 	}
 }
-func (*benchmarkOrderedEventHandler) ListensTo(evt Event) bool {
-	_, listens := evt.(*benchmarkOrderedEvent)
-	return listens
-}
 
 //------
 
@@ -216,8 +189,4 @@ func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) {
 		time.Sleep(time.Nanosecond * 200)
 		hdl.wg.Done()
 	}
-}
-func (*benchmarkConcurrentEventHandler) ListensTo(evt Event) bool {
-	_, listens := evt.(*benchmarkConcurrentEvent)
-	return listens
 }

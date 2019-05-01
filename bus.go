@@ -97,9 +97,7 @@ func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 			break
 		}
 		for _, hdl := range bus.handlers {
-			if hdl.ListensTo(evt) {
-				hdl.Handle(evt)
-			}
+			hdl.Handle(evt)
 		}
 	}
 	closed <- true

@@ -42,6 +42,11 @@ The _Bus_ takes advantage of **additional** _workers_ ([goroutines](https://goby
 
 ### Handlers
 Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
+```go
+type Handler interface {
+    Handle(evt Event)
+}
+```
 
 ### The Bus
 _Bus_ is the _struct_ that will be used to emit all the application's events.  
@@ -82,15 +87,16 @@ bus.Shutdown()
 
 ## Benchmarks
 All the benchmarks are performed against batches of 1 million events.  
-All the ordered events belong to the same topic.
+All the ordered events belong to the same topic.  
+All the benchmarks contain some overhead due to the usage of _sync.WaitGroup_.
 
 #### Benchmarks without handler behavior
 The event handlers are empty to test solely the bus overhead.  
 
 | Benchmark Type | Time |
 | :--- | :---: |
-| Ordered Events | 121 ns/op |
-| Concurrent Events | 120 ns/op |
+| Ordered Events | 116 ns/op |
+| Concurrent Events | 114 ns/op |
 
 #### Benchmarks with simulated handler behavior
 The event handlers use ```time.Sleep(time.Nanosecond * 200)``` for simulation purposes.  
@@ -126,11 +132,6 @@ type LoggerHandler struct {
 func (hdl *LoggerHandler) Handle(evt Event) {
     log.Printf("event %T emitted", evt)
 }
-
-func (*LoggerHandler) ListensTo(evt Event) bool {
-    // listen to all event types
-    return true
-}
 ```
 
 An event handler that listens to multiple event types.
@@ -144,15 +145,6 @@ func (hdl *FooBarHandler) Handle(evt Event) {
     case *Foo, FooBar:
         // handler logic
     }
-}
-
-func (*FooBarHandler) ListensTo(evt Event) bool {
-    // an other way to assert the type of the event. More convenient for handlers that expect different event types.
-    switch evt := evt.(type) {
-    case *Foo, FooBar:
-        return true
-    }
-    return false
 }
 ```
 
