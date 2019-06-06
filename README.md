@@ -60,7 +60,7 @@ For applications that take advantage of concurrent events, the number of concurr
 ```go
 bus.ConcurrentPoolSize(10)
 ```
-If used this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
+If used, this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
 In some scenarios increasing the value can drastically improve performance.  
 It defaults to the value returned by ```runtime.GOMAXPROCS(0)```.  
   
@@ -68,7 +68,7 @@ When aware of the total amount of different topics available in the application.
 ```go
 bus.TopicsCapacity(10)
 ```
-If used this function **must** be called **before** the _Bus_ is initialized.  
+If used, this function **must** be called **before** the _Bus_ is initialized.  
 It defaults to 10.  
   
 The buffer size of topics can also be adjusted.  
@@ -76,7 +76,7 @@ Depending on the use case this value may greatly impact performance.
 ```go
 bus.TopicBuffer(100)
 ```
-If used this function **must** be called **before** the _Bus_ is initialized.  
+If used, this function **must** be called **before** the _Bus_ is initialized.  
 It defaults to 100.  
 
 #### Shutting Down
@@ -141,7 +141,7 @@ type FooBarHandler struct {
 }
 
 func (hdl *FooBarHandler) Handle(evt Event) {
-    // an other way to assert the type of the event. More convenient for handlers that expect different event types.
+    // a convenient way to assert multiple event types.
     switch evt := evt.(type) {
     case *Foo, FooBar:
         // handler logic
