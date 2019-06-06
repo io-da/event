@@ -72,7 +72,7 @@ If used, this function **must** be called **before** the _Bus_ is initialized.
 It defaults to 10.  
   
 The buffer size of topics can also be adjusted.  
-Depending on the use case this value may greatly impact performance.
+Depending on the use case, this value may greatly impact performance.
 ```go
 bus.TopicBuffer(100)
 ```
@@ -124,7 +124,6 @@ func (FooBar) Topic() string { return "foo-bar" }
 ```
 
 #### Example Handlers
-
 An event handler that logs every event emitted.
 ```go
 type LoggerHandler struct {
