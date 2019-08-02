@@ -1,6 +1,7 @@
 package event
 
 import (
+	"errors"
 	"runtime"
 	"sync/atomic"
 )
@@ -8,38 +9,48 @@ import (
 // Bus is the only struct exported and required for the event bus usage.
 // The Bus should be instantiated using the NewBus function.
 type Bus struct {
-	concurrentPoolSize     int
-	topicsCapacity         int
-	topicBuffer            int
-	initialized            *uint32
-	shuttingDown           *uint32
-	workers                *uint32
-	handlers               []Handler
-	topics                 []*topic
-	concurrentQueuedEvents chan Event
-	closed                 chan bool
+	concurrentWorkerPoolSize int
+	topicsCapacity           int
+	topicBuffer              int
+	initialized              *uint32
+	shuttingDown             *uint32
+	workers                  *uint32
+	handlers                 []Handler
+	errorHandlers            []ErrorHandler
+	topics                   []*topic
+	concurrentQueuedEvents   chan Event
+	closed                   chan bool
 }
 
 // NewBus instantiates the Bus struct.
 // The Initialization of the Bus is performed separately (Initialize function) for dependency injection purposes.
 func NewBus() *Bus {
 	return &Bus{
-		concurrentPoolSize: runtime.GOMAXPROCS(0),
-		topicsCapacity:     10,
-		topicBuffer:        100,
-		initialized:        new(uint32),
-		shuttingDown:       new(uint32),
-		workers:            new(uint32),
-		closed:             make(chan bool),
+		concurrentWorkerPoolSize: runtime.GOMAXPROCS(0),
+		topicsCapacity:           10,
+		topicBuffer:              100,
+		initialized:              new(uint32),
+		shuttingDown:             new(uint32),
+		workers:                  new(uint32),
+		errorHandlers:            make([]ErrorHandler, 0),
+		closed:                   make(chan bool),
 	}
 }
 
-// ConcurrentPoolSize may optionally be provided to tweak the worker pool size for concurrent events.
+// ConcurrentWorkerPoolSize may optionally be provided to tweak the worker pool size for concurrent events.
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to the value returned by runtime.GOMAXPROCS(0).
-func (bus *Bus) ConcurrentPoolSize(concurrentPoolSize int) {
+func (bus *Bus) ConcurrentWorkerPoolSize(concurrentWorkerPoolSize int) {
 	if !bus.isInitialized() {
-		bus.concurrentPoolSize = concurrentPoolSize
+		bus.concurrentWorkerPoolSize = concurrentWorkerPoolSize
+	}
+}
+
+// ErrorHandlers may optionally be provided.
+// They will receive any error thrown during the event handling process.
+func (bus *Bus) ErrorHandlers(hdls ...ErrorHandler) {
+	if !bus.isInitialized() {
+		bus.errorHandlers = hdls
 	}
 }
 
@@ -69,7 +80,7 @@ func (bus *Bus) Initialize(hdls ...Handler) {
 		bus.handlers = hdls
 		bus.topics = make([]*topic, 0, bus.topicsCapacity)
 		bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
-		for i := 0; i < bus.concurrentPoolSize; i++ {
+		for i := 0; i < bus.concurrentWorkerPoolSize; i++ {
 			bus.workerUp()
 			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
 		}
@@ -79,7 +90,7 @@ func (bus *Bus) Initialize(hdls ...Handler) {
 
 // Emit an Event to the event bus.
 func (bus *Bus) Emit(evt Event) {
-	if evt != nil && !bus.isShuttingDown() {
+	if bus.isValid(evt) {
 		if evt, implements := evt.(Topic); implements {
 			tpc := bus.topic(evt)
 			tpc.handle(evt)
@@ -117,7 +128,9 @@ func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 			break
 		}
 		for _, hdl := range bus.handlers {
-			hdl.Handle(evt)
+			if err := hdl.Handle(evt); err != nil {
+				bus.error(evt, err)
+			}
 		}
 	}
 	closed <- true
@@ -149,7 +162,7 @@ func (bus *Bus) topic(evt Topic) *topic {
 			return tpc
 		}
 	}
-	tpc := newTopic(evt.Topic(), bus.topicBuffer, &bus.handlers)
+	tpc := newTopic(evt.Topic(), bus.topicBuffer, &bus.handlers, &bus.errorHandlers)
 	bus.addTopic(tpc)
 	return tpc
 }
@@ -168,4 +181,26 @@ func (bus *Bus) doubleCapacity() {
 	nTpc := make([]*topic, l, c)
 	copy(nTpc, bus.topics)
 	bus.topics = nTpc
+}
+
+func (bus *Bus) isValid(evt Event) bool {
+	if evt == nil {
+		bus.error(evt, errors.New("invalid event"))
+		return false
+	}
+	if !bus.isInitialized() {
+		bus.error(evt, errors.New("the event bus is not initialized"))
+		return false
+	}
+	if bus.isShuttingDown() {
+		bus.error(evt, errors.New("the event bus is shutting down"))
+		return false
+	}
+	return true
+}
+
+func (bus *Bus) error(evt Event, err error) {
+	for _, errHdl := range bus.errorHandlers {
+		errHdl.Handle(evt, err)
+	}
 }

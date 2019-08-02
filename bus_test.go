@@ -42,9 +42,30 @@ func TestBus_Emit(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	hdl := &testHandler1{wg: wg}
 	hdl2 := &testHandler2{wg: wg}
+	hdlWErr := &testHandlerWithError{wg: wg}
+	errHdl := &storeErrorsHandler{
+		errs: make(map[string]error),
+	}
+	bus.ErrorHandlers(errHdl)
 
-	wg.Add(3)
-	bus.Initialize(hdl, hdl2)
+	bus.Emit(nil)
+	if err := errHdl.Error(nil); err == nil {
+		t.Error("A nil event is expected to throw an error.")
+	}
+
+	evt := &testEvent1{}
+	bus.Emit(evt)
+	if err := errHdl.Error(evt); err == nil {
+		t.Error("This event is expected to throw an error since the bus is not initialized yet.")
+	}
+
+	wg.Add(5)
+	bus.ErrorHandlers(errHdl)
+	bus.Initialize(hdl, hdl2, hdlWErr)
+	evtErr := &testEventError{}
+	bus.Emit(evtErr)
+	evtErr2 := &testEventError2{}
+	bus.Emit(evtErr2)
 	bus.Emit(&testEvent1{})
 	bus.Emit(&testEvent2{})
 	bus.Emit(testEvent3("test"))
@@ -55,6 +76,13 @@ func TestBus_Emit(t *testing.T) {
 
 	wg.Wait()
 	timeout.Stop()
+
+	if err := errHdl.Error(evtErr); err == nil {
+		t.Error("Event was expected to throw an error.")
+	}
+	if err := errHdl.Error(evtErr2); err == nil {
+		t.Error("Event was expected to throw an error.")
+	}
 }
 
 func TestBus_Shutdown(t *testing.T) {
@@ -150,7 +178,7 @@ func TestBus_OrderedEvents(t *testing.T) {
 
 func TestBus_ConcurrentEvents(t *testing.T) {
 	bus := NewBus()
-	bus.ConcurrentPoolSize(4)
+	bus.ConcurrentWorkerPoolSize(4)
 	wg := &sync.WaitGroup{}
 	hdl := &testEventOrderHandler{
 		wg:        wg,
@@ -207,15 +235,19 @@ func BenchmarkBus_Handling1MillionConcurrentEvents(b *testing.B) {
 
 type ExampleEvent struct{}
 
-func (*ExampleEvent) Topic() string { return "example" }
+func (*ExampleEvent) Topic() string { return "example-topic" }
+func (*ExampleEvent) ID() []byte {
+	return []byte("UUID")
+}
 
 type ExampleHandler struct {
 }
 
-func (hdl *ExampleHandler) Handle(evt Event) {
+func (hdl *ExampleHandler) Handle(evt Event) error {
 	if _, listens := evt.(*ExampleEvent); listens {
 		//code specific to this Event handler
 	}
+	return nil
 }
 func (*ExampleHandler) ListensTo(evt Event) bool {
 	_, listens := evt.(*ExampleEvent)

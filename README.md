@@ -28,10 +28,17 @@ Clean and simple codebase. **No reflection, no closures.**
 ## Getting Started
 
 ### Events
-Events can be of any type. Ideally they should contain immutable data.  
+Events are any type that implements the _Event_ interface. Ideally they should contain immutable data.  
+```go
+type Event interface {
+    ID() []byte
+}
+```
+
 An event may optionally implement the _Topic_ interface. If it does, then it will be handled within that topic.   
 ```go
 type Topic interface {
+    Event
     Topic() string
 }
 ```
@@ -45,9 +52,18 @@ The _Bus_ takes advantage of **additional** _workers_ ([goroutines](https://goby
 Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
 ```go
 type Handler interface {
-    Handle(evt Event)
+    Handle(evt Event) error
 }
 ```
+
+### Error Handlers
+Error handlers are any type that implements the _ErrorHandler_ interface. Error handlers are optional (but advised) and provided to the bus using the ```bus.ErrorHandlers``` function.  
+```go
+type ErrorHandler interface {
+    Handle(evt Event, err error)
+}
+```
+Any time an error occurs within the bus, it will be passed on to the error handlers. This strategy can be used for decoupled error handling.
 
 ### The Bus
 _Bus_ is the _struct_ that will be used to emit all the application's events.  
@@ -58,7 +74,7 @@ The application should instantiate the _Bus_ once and then use it's reference in
 #### Tweaking Performance
 For applications that take advantage of concurrent events, the number of concurrent workers can be adjusted.
 ```go
-bus.ConcurrentPoolSize(10)
+bus.ConcurrentWorkerPoolSize(10)
 ```
 If used, this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
 In some scenarios increasing the value can drastically improve performance.  
@@ -115,12 +131,18 @@ A simple ```struct``` event.
 type Foo struct {
     bar string
 }
+func (*Foo) ID() []byte {
+    return []byte("FOO-UUID")
+}
 ```
 
 A ```string``` event that implements the _Topic_ interface.
 ```go
-type FooBar string
-func (FooBar) Topic() string { return "foo-bar" }
+type Bar string
+func (Bar) Topic() string { return "bar-topic" }
+func (Bar) ID() []byte {
+    return []byte("BAR-UUID")
+}
 ```
 
 #### Example Handlers
@@ -129,8 +151,9 @@ An event handler that logs every event emitted.
 type LoggerHandler struct {
 }
 
-func (hdl *LoggerHandler) Handle(evt Event) {
+func (hdl *LoggerHandler) Handle(evt Event) error {
     log.Printf("event %T emitted", evt)
+    return nil
 }
 ```
 
@@ -139,12 +162,13 @@ An event handler that listens to multiple event types.
 type FooBarHandler struct {
 }
 
-func (hdl *FooBarHandler) Handle(evt Event) {
+func (hdl *FooBarHandler) Handle(evt Event) error {
     // a convenient way to assert multiple event types.
     switch evt := evt.(type) {
-    case *Foo, FooBar:
+    case *Foo, Bar:
         // handler logic
     }
+    return nil
 }
 ```
 
@@ -169,7 +193,7 @@ func main() {
     
     // emit events
     bus.Emit(&Foo{})
-    bus.Emit(FooBar("foobar"))
+    bus.Emit(Bar("bar"))
 }
 ```
 
