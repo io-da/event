@@ -10,14 +10,14 @@ An event bus to react to all the things.
 ``` go get github.com/io-da/event ```
 
 ## Overview
-0. [Events](#Events)
-0. [Handlers](#Handlers)
-0. [Error Handlers](#Error-Handlers)
-0. [The Bus](#The-Bus)  
-   0. [Tweaking Performance](#Tweaking-Performance)  
-   0. [Shutting Down](#Shutting-Down)  
-0. [Benchmarks](#Benchmarks)
-0. [Examples](#Examples)
+1. [Events](#Events)
+2. [Handlers](#Handlers)
+3. [Error Handlers](#Error-Handlers)
+4. [The Bus](#The-Bus)  
+   1. [Tweaking Performance](#Tweaking-Performance)  
+   2. [Shutting Down](#Shutting-Down)  
+5. [Benchmarks](#Benchmarks)
+6. [Examples](#Examples)
 
 ## Introduction
 This library is intended for anyone looking to emit events in their application. And it achieves this objective using an event bus architecture.  
