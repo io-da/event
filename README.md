@@ -12,6 +12,7 @@ An event bus developed with a focus on performance.
 ## Overview
 1. [Events](#Events)
 2. [Handlers](#Handlers)
+2. [Error Handlers](#Error-Handlers)
 3. [The Bus](#The-Bus)  
    1. [Tweaking Performance](#Tweaking-Performance)  
    2. [Shutting Down](#Shutting-Down)  
