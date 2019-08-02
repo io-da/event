@@ -1,5 +1,5 @@
 # [Go](https://golang.org/) Event Bus
-An event bus developed with a focus on performance.
+An event bus to react to all the things.
 
 [![Build Status](https://travis-ci.org/io-da/event.svg?branch=master)](https://travis-ci.org/io-da/event)
 [![Maintainability](https://api.codeclimate.com/v1/badges/f256105248459e250292/maintainability)](https://codeclimate.com/github/io-da/event/maintainability) 
@@ -10,17 +10,17 @@ An event bus developed with a focus on performance.
 ``` go get github.com/io-da/event ```
 
 ## Overview
-1. [Events](#Events)
-2. [Handlers](#Handlers)
-2. [Error Handlers](#Error-Handlers)
-3. [The Bus](#The-Bus)  
-   1. [Tweaking Performance](#Tweaking-Performance)  
-   2. [Shutting Down](#Shutting-Down)  
-4. [Benchmarks](#Benchmarks)
-5. [Examples](#Examples)
+0. [Events](#Events)
+0. [Handlers](#Handlers)
+0. [Error Handlers](#Error-Handlers)
+0. [The Bus](#The-Bus)  
+   0. [Tweaking Performance](#Tweaking-Performance)  
+   0. [Shutting Down](#Shutting-Down)  
+0. [Benchmarks](#Benchmarks)
+0. [Examples](#Examples)
 
 ## Introduction
-This library is intended for anyone looking to emit some events in their application. And it achieves this objective using an event bus architecture.  
+This library is intended for anyone looking to emit events in their application. And it achieves this objective using an event bus architecture.  
 The _Bus_ will use _workers_ ([goroutines](https://gobyexample.com/goroutines)) to attempt handling the events in **non-blocking** manner.  
 Clean and simple codebase. **No reflection, no closures.**
 
