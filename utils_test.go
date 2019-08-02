@@ -248,7 +248,6 @@ func (hdl *storeErrorsHandler) Error(evt Event) error {
 func (hdl *storeErrorsHandler) key(evt Event) string {
 	if evt == nil {
 		return "nil"
-	} else {
-		return string(evt.ID())
 	}
+	return string(evt.ID())
 }
