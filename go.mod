@@ -1,3 +1,3 @@
 module github.com/io-da/event
 
-go 1.12
+go 1.13
