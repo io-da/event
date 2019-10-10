@@ -16,6 +16,7 @@ An event bus to react to all the things.
 4. [The Bus](#The-Bus)  
    1. [Tweaking Performance](#Tweaking-Performance)  
    2. [Shutting Down](#Shutting-Down)  
+   3. [Available Errors](#Available-Errors)  
 5. [Benchmarks](#Benchmarks)
 6. [Examples](#Examples)
 
@@ -102,6 +103,28 @@ The _Bus_ also provides a shutdown function that attempts to gracefully stop the
 bus.Shutdown()
 ```  
 **This function will block until the bus is fully stopped.**
+
+#### Available Errors 
+Below is a list of errors that can occur when calling bus.Emit.  
+
+```go
+// event.ErrorInvalidEvent  
+// event.ErrorEventBusNotInitialized
+// event.ErrorEventBusIsShuttingDown
+
+if err := bus.Handle(&Command{}); err != nil {
+    switch(err.(type)) {
+        case event.ErrorInvalidEvent:
+            // do something
+        case event.ErrorEventBusNotInitialized:
+            // do something
+        case event.ErrorEventBusIsShuttingDown:
+            // do something
+        default:
+            // do something
+    }
+}
+```
 
 ## Benchmarks
 All the benchmarks are performed against batches of 1 million events.  
