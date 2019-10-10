@@ -112,7 +112,7 @@ Below is a list of errors that can occur when calling bus.Emit.
 // event.ErrorEventBusNotInitialized
 // event.ErrorEventBusIsShuttingDown
 
-if err := bus.Handle(&Command{}); err != nil {
+if err := bus.Emit(&Event{}); err != nil {
     switch(err.(type)) {
         case event.ErrorInvalidEvent:
             // do something
