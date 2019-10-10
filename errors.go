@@ -20,6 +20,6 @@ func (e ErrorEventBusIsShuttingDown) Error() string {
 
 const (
 	InvalidEventError           = ErrorInvalidEvent("event: invalid event")
-	EventBusNotInitializedError = ErrorEventBusNotInitialized("the event bus is not initialized")
-	EventBusIsShuttingDownError = ErrorEventBusIsShuttingDown("the event bus is shutting down")
+	EventBusNotInitializedError = ErrorEventBusNotInitialized("event: the event bus is not initialized")
+	EventBusIsShuttingDownError = ErrorEventBusIsShuttingDown("event: the event bus is shutting down")
 )
