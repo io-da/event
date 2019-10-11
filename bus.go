@@ -1,7 +1,6 @@
 package event
 
 import (
-	"errors"
 	"runtime"
 	"sync/atomic"
 )
@@ -185,15 +184,15 @@ func (bus *Bus) doubleCapacity() {
 
 func (bus *Bus) isValid(evt Event) bool {
 	if evt == nil {
-		bus.error(evt, errors.New("invalid event"))
+		bus.error(evt, InvalidEventError)
 		return false
 	}
 	if !bus.isInitialized() {
-		bus.error(evt, errors.New("the event bus is not initialized"))
+		bus.error(evt, EventBusNotInitializedError)
 		return false
 	}
 	if bus.isShuttingDown() {
-		bus.error(evt, errors.New("the event bus is shutting down"))
+		bus.error(evt, EventBusIsShuttingDownError)
 		return false
 	}
 	return true
