@@ -1,25 +1,34 @@
 package event
 
+// ErrorInvalidEvent is used when invalid events are handled.
 type ErrorInvalidEvent string
 
+// Error returns the string message of ErrorInvalidEvent.
 func (e ErrorInvalidEvent) Error() string {
 	return string(e)
 }
 
-type ErrorEventBusNotInitialized string
+// ErrorBusNotInitialized is used when events are emitted but the bus is not initialized.
+type ErrorBusNotInitialized string
 
-func (e ErrorEventBusNotInitialized) Error() string {
+// Error returns the string message of ErrorBusNotInitialized.
+func (e ErrorBusNotInitialized) Error() string {
 	return string(e)
 }
 
-type ErrorEventBusIsShuttingDown string
+// ErrorBusIsShuttingDown is used when events are emitted but the bus is shutting down.
+type ErrorBusIsShuttingDown string
 
-func (e ErrorEventBusIsShuttingDown) Error() string {
+// Error returns the string message of ErrorBusIsShuttingDown.
+func (e ErrorBusIsShuttingDown) Error() string {
 	return string(e)
 }
 
 const (
-	InvalidEventError           = ErrorInvalidEvent("event: invalid event")
-	EventBusNotInitializedError = ErrorEventBusNotInitialized("event: the event bus is not initialized")
-	EventBusIsShuttingDownError = ErrorEventBusIsShuttingDown("event: the event bus is shutting down")
+	// InvalidEventError is a constant equivalent of the ErrorInvalidEvent error.
+	InvalidEventError = ErrorInvalidEvent("event: invalid event")
+	// BusNotInitializedError is a constant equivalent of the ErrorBusNotInitialized error.
+	BusNotInitializedError = ErrorBusNotInitialized("event: the bus is not initialized")
+	// BusIsShuttingDownError is a constant equivalent of the ErrorBusIsShuttingDown error.
+	BusIsShuttingDownError = ErrorBusIsShuttingDown("event: the bus is shutting down")
 )

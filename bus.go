@@ -83,7 +83,6 @@ func (bus *Bus) Initialize(hdls ...Handler) {
 			bus.workerUp()
 			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
 		}
-		atomic.CompareAndSwapUint32(bus.shuttingDown, 1, 0)
 	}
 }
 
@@ -153,6 +152,7 @@ func (bus *Bus) shutdown() {
 		tpc.shutdown()
 	}
 	atomic.CompareAndSwapUint32(bus.initialized, 1, 0)
+	atomic.CompareAndSwapUint32(bus.shuttingDown, 1, 0)
 }
 
 func (bus *Bus) topic(evt Topic) *topic {
@@ -188,11 +188,11 @@ func (bus *Bus) isValid(evt Event) bool {
 		return false
 	}
 	if !bus.isInitialized() {
-		bus.error(evt, EventBusNotInitializedError)
+		bus.error(evt, BusNotInitializedError)
 		return false
 	}
 	if bus.isShuttingDown() {
-		bus.error(evt, EventBusIsShuttingDownError)
+		bus.error(evt, BusIsShuttingDownError)
 		return false
 	}
 	return true

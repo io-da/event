@@ -49,14 +49,20 @@ func TestBus_Emit(t *testing.T) {
 	bus.ErrorHandlers(errHdl)
 
 	bus.Emit(nil)
-	if err := errHdl.Error(nil); err == nil {
-		t.Error("A nil event is expected to throw an error.")
+	err := errHdl.Error(nil)
+	if err == nil || err != InvalidEventError {
+		t.Error("Expected InvalidEventError error.")
+	} else if err.Error() != "event: invalid event" {
+		t.Error("Unexpected InvalidEventError message.")
 	}
 
 	evt := &testEvent1{}
 	bus.Emit(evt)
-	if err := errHdl.Error(evt); err == nil {
-		t.Error("This event is expected to throw an error since the bus is not initialized yet.")
+	err = errHdl.Error(evt)
+	if err == nil || err != BusNotInitializedError {
+		t.Error("Expected BusNotInitializedError error.")
+	} else if err.Error() != "event: the bus is not initialized" {
+		t.Error("Unexpected BusNotInitializedError message.")
 	}
 
 	wg.Add(5)
@@ -89,25 +95,36 @@ func TestBus_Shutdown(t *testing.T) {
 	bus := NewBus()
 	hdl := &emptyHandler{}
 
+	errHdl := &storeErrorsHandler{
+		errs: make(map[string]error),
+	}
+	bus.ErrorHandlers(errHdl)
+
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
+	bus.ConcurrentWorkerPoolSize(1337)
 	bus.Initialize(hdl)
 	bus.Emit(&testEvent1{})
-	time.AfterFunc(time.Nanosecond, func() {
+	time.AfterFunc(time.Microsecond, func() {
 		// graceful shutdown
 		bus.Shutdown()
 		wg.Done()
 	})
-
 	for i := 0; i < 1000; i++ {
 		bus.Emit(&testEvent1{})
 	}
-	wg.Wait()
-
+	time.Sleep(time.Microsecond)
 	if !bus.isShuttingDown() {
 		t.Error("The bus should be shutting down.")
 	}
+	err := errHdl.Error(&testEvent1{})
+	if err == nil || err != BusIsShuttingDownError {
+		t.Error("Expected BusIsShuttingDownError error.")
+	} else if err.Error() != "event: the bus is shutting down" {
+		t.Error("Unexpected BusIsShuttingDownError message.")
+	}
+	wg.Wait()
 }
 
 func TestBus_ManyTopics(t *testing.T) {
