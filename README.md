@@ -1,7 +1,6 @@
 # [Go](https://golang.org/) Event Bus
 An event bus to react to all the things.
 
-[![Build Status](https://travis-ci.org/io-da/event.svg?branch=master)](https://travis-ci.org/io-da/event)
 [![Maintainability](https://api.codeclimate.com/v1/badges/f256105248459e250292/maintainability)](https://codeclimate.com/github/io-da/event/maintainability) 
 [![Test Coverage](https://api.codeclimate.com/v1/badges/f256105248459e250292/test_coverage)](https://codeclimate.com/github/io-da/event/test_coverage) 
 [![GoDoc](https://godoc.org/github.com/io-da/event?status.svg)](https://godoc.org/github.com/io-da/event)  
