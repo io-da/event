@@ -2,7 +2,6 @@ package event
 
 import (
 	"runtime"
-	"sync/atomic"
 )
 
 // Bus is the only struct exported and required for the event bus usage.
@@ -11,9 +10,9 @@ type Bus struct {
 	concurrentWorkerPoolSize int
 	topicsCapacity           int
 	topicBuffer              int
-	initialized              *uint32
-	shuttingDown             *uint32
-	workers                  *uint32
+	initialized              *flag
+	shuttingDown             *flag
+	workers                  *counter
 	handlers                 []Handler
 	errorHandlers            []ErrorHandler
 	topics                   []*topic
@@ -28,59 +27,59 @@ func NewBus() *Bus {
 		concurrentWorkerPoolSize: runtime.GOMAXPROCS(0),
 		topicsCapacity:           10,
 		topicBuffer:              100,
-		initialized:              new(uint32),
-		shuttingDown:             new(uint32),
-		workers:                  new(uint32),
+		initialized:              newFlag(),
+		shuttingDown:             newFlag(),
+		workers:                  newCounter(),
 		errorHandlers:            make([]ErrorHandler, 0),
 		closed:                   make(chan bool),
 	}
 }
 
-// ConcurrentWorkerPoolSize may optionally be provided to tweak the worker pool size for concurrent events.
+// SetConcurrentWorkerPoolSize may optionally be provided to tweak the worker pool size for concurrent events.
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to the value returned by runtime.GOMAXPROCS(0).
-func (bus *Bus) ConcurrentWorkerPoolSize(concurrentWorkerPoolSize int) {
-	if !bus.isInitialized() {
+func (bus *Bus) SetConcurrentWorkerPoolSize(concurrentWorkerPoolSize int) {
+	if !bus.initialized.enabled() {
 		bus.concurrentWorkerPoolSize = concurrentWorkerPoolSize
 	}
 }
 
-// ErrorHandlers may optionally be provided.
+// SetErrorHandlers may optionally be used to provide a list of error handlers.
 // They will receive any error thrown during the event handling process.
-func (bus *Bus) ErrorHandlers(hdls ...ErrorHandler) {
-	if !bus.isInitialized() {
+func (bus *Bus) SetErrorHandlers(hdls ...ErrorHandler) {
+	if !bus.initialized.enabled() {
 		bus.errorHandlers = hdls
 	}
 }
 
-// TopicsCapacity may optionally be provided to tweak the starting capacity on the topic slice.
+// SetTopicsCapacity may optionally be used to tweak the starting capacity on the topic slice.
 // Ideally this value would be equal to the total amount of available topics.
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to 10.
-func (bus *Bus) TopicsCapacity(topicsCapacity int) {
-	if !bus.isInitialized() {
+func (bus *Bus) SetTopicsCapacity(topicsCapacity int) {
+	if !bus.initialized.enabled() {
 		bus.topicsCapacity = topicsCapacity
 	}
 }
 
-// TopicBuffer may optionally be provided to tweak the buffer size of topics.
+// SetTopicBuffer may optionally be used to tweak the buffer size of topics.
 // This value may have high impact on performance depending on the use case.
 // It can only be adjusted *before* the bus is initialized.
 // It defaults to 100.
-func (bus *Bus) TopicBuffer(topicBuffer int) {
-	if !bus.isInitialized() {
+func (bus *Bus) SetTopicBuffer(topicBuffer int) {
+	if !bus.initialized.enabled() {
 		bus.topicBuffer = topicBuffer
 	}
 }
 
 // Initialize the event bus.
 func (bus *Bus) Initialize(hdls ...Handler) {
-	if bus.initialize() {
+	if bus.initialized.enable() {
 		bus.handlers = hdls
 		bus.topics = make([]*topic, 0, bus.topicsCapacity)
 		bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
 		for i := 0; i < bus.concurrentWorkerPoolSize; i++ {
-			bus.workerUp()
+			bus.workers.increment()
 			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
 		}
 	}
@@ -101,24 +100,12 @@ func (bus *Bus) Emit(evt Event) {
 // Shutdown the event bus gracefully.
 // *Events emitted while shutting down will be disregarded*.
 func (bus *Bus) Shutdown() {
-	if atomic.CompareAndSwapUint32(bus.shuttingDown, 0, 1) {
+	if bus.shuttingDown.enable() {
 		bus.shutdown()
 	}
 }
 
 //-----Private Functions------//
-
-func (bus *Bus) initialize() bool {
-	return atomic.CompareAndSwapUint32(bus.initialized, 0, 1)
-}
-
-func (bus *Bus) isInitialized() bool {
-	return atomic.LoadUint32(bus.initialized) == 1
-}
-
-func (bus *Bus) isShuttingDown() bool {
-	return atomic.LoadUint32(bus.shuttingDown) == 1
-}
 
 func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 	for evt := range queuedEvents {
@@ -134,30 +121,22 @@ func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 	closed <- true
 }
 
-func (bus *Bus) workerUp() {
-	atomic.AddUint32(bus.workers, 1)
-}
-
-func (bus *Bus) workerDown() {
-	atomic.AddUint32(bus.workers, ^uint32(0))
-}
-
 func (bus *Bus) shutdown() {
-	for atomic.LoadUint32(bus.workers) > 0 {
+	for !bus.workers.is(0) {
 		bus.concurrentQueuedEvents <- nil
 		<-bus.closed
-		bus.workerDown()
+		bus.workers.decrement()
 	}
 	for _, tpc := range bus.topics {
 		tpc.shutdown()
 	}
-	atomic.CompareAndSwapUint32(bus.initialized, 1, 0)
-	atomic.CompareAndSwapUint32(bus.shuttingDown, 1, 0)
+	bus.initialized.disable()
+	bus.shuttingDown.disable()
 }
 
 func (bus *Bus) topic(evt Topic) *topic {
 	for _, tpc := range bus.topics {
-		if tpc.name == evt.Topic() {
+		if tpc.id == evt.Topic() {
 			return tpc
 		}
 	}
@@ -187,11 +166,11 @@ func (bus *Bus) isValid(evt Event) bool {
 		bus.error(evt, InvalidEventError)
 		return false
 	}
-	if !bus.isInitialized() {
+	if !bus.initialized.enabled() {
 		bus.error(evt, BusNotInitializedError)
 		return false
 	}
-	if bus.isShuttingDown() {
+	if bus.shuttingDown.enabled() {
 		bus.error(evt, BusIsShuttingDownError)
 		return false
 	}

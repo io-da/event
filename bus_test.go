@@ -1,8 +1,6 @@
 package event
 
 import (
-	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +19,7 @@ func TestBus_Initialize(t *testing.T) {
 
 func TestBus_TopicsCapacity(t *testing.T) {
 	bus := NewBus()
-	bus.TopicsCapacity(100)
+	bus.SetTopicsCapacity(100)
 	bus.Initialize()
 	if cap(bus.topics) != 100 {
 		t.Error("Unexpected topic slice capacity.")
@@ -30,7 +28,7 @@ func TestBus_TopicsCapacity(t *testing.T) {
 
 func TestBus_TopicBuffer(t *testing.T) {
 	bus := NewBus()
-	bus.TopicBuffer(1000)
+	bus.SetTopicBuffer(1000)
 	bus.Initialize()
 	if cap(bus.concurrentQueuedEvents) != 1000 {
 		t.Error("Unexpected topic queue capacity.")
@@ -40,14 +38,17 @@ func TestBus_TopicBuffer(t *testing.T) {
 func TestBus_Emit(t *testing.T) {
 	bus := NewBus()
 	wg := &sync.WaitGroup{}
+	wg2 := &sync.WaitGroup{}
 	hdl := &testHandler1{wg: wg}
 	hdl2 := &testHandler2{wg: wg}
 	hdlWErr := &testHandlerWithError{wg: wg}
 	errHdl := &storeErrorsHandler{
-		errs: make(map[string]error),
+		errs: make(map[Identifier]error),
+		wg:   wg2,
 	}
-	bus.ErrorHandlers(errHdl)
+	bus.SetErrorHandlers(errHdl)
 
+	wg2.Add(1)
 	bus.Emit(nil)
 	err := errHdl.Error(nil)
 	if err == nil || err != InvalidEventError {
@@ -56,6 +57,7 @@ func TestBus_Emit(t *testing.T) {
 		t.Error("Unexpected InvalidEventError message.")
 	}
 
+	wg2.Add(1)
 	evt := &testEvent1{}
 	bus.Emit(evt)
 	err = errHdl.Error(evt)
@@ -66,7 +68,8 @@ func TestBus_Emit(t *testing.T) {
 	}
 
 	wg.Add(5)
-	bus.ErrorHandlers(errHdl)
+	wg2.Add(2)
+	bus.SetErrorHandlers(errHdl)
 	bus.Initialize(hdl, hdl2, hdlWErr)
 	evtErr := &testEventError{}
 	bus.Emit(evtErr)
@@ -81,6 +84,7 @@ func TestBus_Emit(t *testing.T) {
 	})
 
 	wg.Wait()
+	wg2.Wait()
 	timeout.Stop()
 
 	if err := errHdl.Error(evtErr); err == nil {
@@ -94,16 +98,15 @@ func TestBus_Emit(t *testing.T) {
 func TestBus_Shutdown(t *testing.T) {
 	bus := NewBus()
 	hdl := &emptyHandler{}
-
 	errHdl := &storeErrorsHandler{
-		errs: make(map[string]error),
+		errs: make(map[Identifier]error),
 	}
-	bus.ErrorHandlers(errHdl)
+	bus.SetErrorHandlers(errHdl)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	bus.ConcurrentWorkerPoolSize(1337)
+	bus.SetConcurrentWorkerPoolSize(1337)
 	bus.Initialize(hdl)
 	bus.Emit(&testEvent1{})
 	time.AfterFunc(time.Microsecond, func() {
@@ -115,7 +118,7 @@ func TestBus_Shutdown(t *testing.T) {
 		bus.Emit(&testEvent1{})
 	}
 	time.Sleep(time.Microsecond)
-	if !bus.isShuttingDown() {
+	if !bus.shuttingDown.enabled() {
 		t.Error("The bus should be shutting down.")
 	}
 	err := errHdl.Error(&testEvent1{})
@@ -134,9 +137,9 @@ func TestBus_ManyTopics(t *testing.T) {
 
 	bus.Initialize(hdl)
 	wg.Add(1000)
-	for i := 0; i < 1000; i++ {
+	for i := int64(0); i < 1000; i++ {
 		bus.Emit(&testEventDynamicTopic{
-			Tpc: fmt.Sprintf("test:dynamic-topic-%d-%d", i, rand.Intn(1000000)),
+			Tpc: Identifier(i),
 		})
 	}
 	wg.Wait()
@@ -148,12 +151,15 @@ func TestBus_HandlerOrder(t *testing.T) {
 
 	hdls := make([]Handler, 0, 1000)
 	wg.Add(1000)
-	for i := 0; i < 1000; i++ {
-		hdls = append(hdls, &testHandlerOrder{wg: wg, position: uint32(i)})
+	for i := uint32(0); i < 1000; i++ {
+		hdls = append(hdls, &testHandlerOrder{wg: wg, position: i})
 	}
 	bus.Initialize(hdls...)
 
-	evt := &testHandlerOrderEvent{position: new(uint32), unordered: new(uint32)}
+	evt := &testHandlerOrderEvent{
+		position:  newCounter(),
+		unordered: newFlag(),
+	}
 	bus.Emit(evt)
 
 	timeout := time.AfterFunc(time.Second*10, func() {
@@ -162,7 +168,7 @@ func TestBus_HandlerOrder(t *testing.T) {
 
 	wg.Wait()
 	timeout.Stop()
-	if evt.IsUnordered() {
+	if evt.unordered.enabled() {
 		t.Error("The Handler order MUST be respected.")
 	}
 }
@@ -172,14 +178,14 @@ func TestBus_OrderedEvents(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	hdl := &testEventOrderHandler{
 		wg:        wg,
-		position:  new(int32),
-		unordered: new(int32),
+		position:  newCounter(),
+		unordered: newFlag(),
 	}
 
 	bus.Initialize(hdl)
 	wg.Add(1000)
-	for i := 0; i < 1000; i++ {
-		bus.Emit(&testEventOrder{position: int32(i)})
+	for i := uint32(0); i < 1000; i++ {
+		bus.Emit(&testEventOrder{position: i})
 	}
 
 	timeout := time.AfterFunc(time.Second*10, func() {
@@ -188,25 +194,25 @@ func TestBus_OrderedEvents(t *testing.T) {
 
 	wg.Wait()
 	timeout.Stop()
-	if hdl.IsUnordered() {
+	if hdl.unordered.enabled() {
 		t.Error("The Event order MUST be respected within the same topic.")
 	}
 }
 
 func TestBus_ConcurrentEvents(t *testing.T) {
 	bus := NewBus()
-	bus.ConcurrentWorkerPoolSize(4)
+	bus.SetConcurrentWorkerPoolSize(4)
 	wg := &sync.WaitGroup{}
 	hdl := &testEventOrderHandler{
 		wg:        wg,
-		position:  new(int32),
-		unordered: new(int32),
+		position:  newCounter(),
+		unordered: newFlag(),
 	}
 
 	bus.Initialize(hdl)
 	wg.Add(1000)
 	for i := 0; i < 1000; i++ {
-		bus.Emit(&testEventConcurrent{position: int32(i)})
+		bus.Emit(&testEventConcurrent{position: uint32(i)})
 	}
 
 	timeout := time.AfterFunc(time.Second*10, func() {
@@ -215,7 +221,7 @@ func TestBus_ConcurrentEvents(t *testing.T) {
 
 	wg.Wait()
 	timeout.Stop()
-	if !hdl.IsUnordered() {
+	if !hdl.unordered.enabled() {
 		t.Log("WARNING: The events were handled in an ordered manner. " +
 			"This is very unlikely unless the bus/environment is limited to a single routine. " +
 			"If that is not the case, then something is likely broken.")
@@ -248,36 +254,4 @@ func BenchmarkBus_Handling1MillionConcurrentEvents(b *testing.B) {
 		}
 		wg.Wait()
 	}
-}
-
-type ExampleEvent struct{}
-
-func (*ExampleEvent) Topic() string { return "example-topic" }
-func (*ExampleEvent) ID() []byte {
-	return []byte("UUID")
-}
-
-type ExampleHandler struct {
-}
-
-func (hdl *ExampleHandler) Handle(evt Event) error {
-	if _, listens := evt.(*ExampleEvent); listens {
-		//code specific to this Event handler
-	}
-	return nil
-}
-func (*ExampleHandler) ListensTo(evt Event) bool {
-	_, listens := evt.(*ExampleEvent)
-	return listens
-}
-
-func ExampleBus_Emit() {
-	// Create the bus
-	bus := NewBus()
-
-	// Add handlers and initialize the bus
-	bus.Initialize(&ExampleHandler{})
-
-	// Emit events
-	bus.Emit(&ExampleEvent{})
 }

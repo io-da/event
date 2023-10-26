@@ -1,16 +1,16 @@
 package event
 
 type topic struct {
-	name          string
+	id            Identifier
 	queuedEvents  chan Event
 	closed        chan bool
 	handlers      *[]Handler
 	errorHandlers *[]ErrorHandler
 }
 
-func newTopic(name string, buffer int, handlers *[]Handler, errorHandlers *[]ErrorHandler) *topic {
+func newTopic(id Identifier, buffer int, handlers *[]Handler, errorHandlers *[]ErrorHandler) *topic {
 	tpc := &topic{
-		name:          name,
+		id:            id,
 		queuedEvents:  make(chan Event, buffer),
 		closed:        make(chan bool),
 		handlers:      handlers,

@@ -2,113 +2,133 @@ package event
 
 import (
 	"errors"
+	"math/big"
 	"sync"
-	"sync/atomic"
-	"time"
+)
+
+// ------Enums------//
+const (
+	Unidentified Identifier = iota
+	TestEvent1
+	TestEvent2
+	TestLiteralEvent
+	TestErrorEvent
+	TestErrorEvent2
+	TestDynamicTopicEvent
+	TestOrderEvent
+	TestHandlerOrderEvent
+	TestConcurrentEvent
+	BenchmarkOrderedEvent
+	BenchmarkConcurrentEvent
+)
+
+const (
+	TestTopic Identifier = iota
+	TestTopic2
+	TestOrderTopic
+	BenchmarkOrderTopic
 )
 
 //------Events------//
 
 type testEvent1 struct{}
 
-func (*testEvent1) Topic() string { return "test:topic" }
-func (*testEvent1) ID() []byte {
-	return []byte("UUID")
+func (*testEvent1) Topic() Identifier { return TestTopic }
+func (*testEvent1) Identifier() Identifier {
+	return TestEvent1
 }
 
 type testEvent2 struct{}
 
-func (*testEvent2) Topic() string { return "test:topic-2" }
-func (*testEvent2) ID() []byte {
-	return []byte("UUID")
+func (*testEvent2) Topic() Identifier { return TestTopic2 }
+func (*testEvent2) Identifier() Identifier {
+	return TestEvent2
 }
 
 type testEvent3 string
 
-func (testEvent3) Topic() string { return "test:topic-2" }
-func (testEvent3) ID() []byte {
-	return []byte("UUID")
+func (testEvent3) Topic() Identifier { return TestTopic2 }
+func (testEvent3) Identifier() Identifier {
+	return TestLiteralEvent
 }
 
 type testEventError struct{}
 
-func (*testEventError) ID() []byte {
-	return []byte("UUID1")
+func (*testEventError) Identifier() Identifier {
+	return TestErrorEvent
 }
 
 type testEventError2 struct{}
 
-func (*testEventError2) Topic() string { return "test:topic" }
-func (*testEventError2) ID() []byte {
-	return []byte("UUID2")
+func (*testEventError2) Topic() Identifier { return TestTopic }
+func (*testEventError2) Identifier() Identifier {
+	return TestErrorEvent2
 }
 
 type testEventDynamicTopic struct {
-	Tpc string
+	Tpc Identifier
 }
 
-func (evt *testEventDynamicTopic) Topic() string {
+func (evt *testEventDynamicTopic) Topic() Identifier {
 	return evt.Tpc
 }
-func (*testEventDynamicTopic) ID() []byte {
-	return []byte("UUID")
+func (*testEventDynamicTopic) Identifier() Identifier {
+	return TestDynamicTopicEvent
 }
 
 type eventOrder interface {
-	Position() int32
+	Position() uint32
 }
 
 type testEventOrder struct {
-	position int32
+	position uint32
 }
 
-func (evt *testEventOrder) Topic() string   { return "test:Event-order" }
-func (evt *testEventOrder) Position() int32 { return evt.position }
-func (*testEventOrder) ID() []byte {
-	return []byte("UUID")
+func (evt *testEventOrder) Topic() Identifier { return TestOrderTopic }
+func (evt *testEventOrder) Position() uint32  { return evt.position }
+func (*testEventOrder) Identifier() Identifier {
+	return TestOrderEvent
 }
 
 type testEventConcurrent struct {
-	position int32
+	position uint32
 }
 
-func (evt *testEventConcurrent) Position() int32 { return evt.position }
-func (*testEventConcurrent) ID() []byte {
-	return []byte("UUID")
+func (evt *testEventConcurrent) Position() uint32 { return evt.position }
+func (*testEventConcurrent) Identifier() Identifier {
+	return TestConcurrentEvent
 }
 
 type testHandlerOrderEvent struct {
-	position  *uint32
-	unordered *uint32
+	position  *counter
+	unordered *flag
 }
 
 func (evt *testHandlerOrderEvent) HandlerPosition(position uint32) {
-	if position != atomic.LoadUint32(evt.position) {
-		atomic.StoreUint32(evt.unordered, 1)
+	if !evt.position.is(position) {
+		evt.unordered.enable()
+		return
 	}
-	atomic.AddUint32(evt.position, 1)
+	evt.position.increment()
 
 }
-func (evt *testHandlerOrderEvent) IsUnordered() bool {
-	return atomic.LoadUint32(evt.unordered) == 1
-}
-func (*testHandlerOrderEvent) ID() []byte {
-	return []byte("UUID")
+func (*testHandlerOrderEvent) Identifier() Identifier {
+	return TestHandlerOrderEvent
 }
 
 type benchmarkOrderedEvent struct {
 }
 
-func (evt *benchmarkOrderedEvent) Topic() string { return "benchmark:ordered" }
-func (*benchmarkOrderedEvent) ID() []byte {
-	return []byte("UUID")
+func (evt *benchmarkOrderedEvent) Topic() Identifier { return BenchmarkOrderTopic }
+func (*benchmarkOrderedEvent) Identifier() Identifier {
+	return BenchmarkOrderedEvent
 }
 
 type benchmarkConcurrentEvent struct {
 }
 
-func (*benchmarkConcurrentEvent) ID() []byte {
-	return []byte("UUID")
+func (*benchmarkConcurrentEvent) Identifier() Identifier {
+	return BenchmarkConcurrentEvent
 }
 
 //------Handlers------//
@@ -172,31 +192,22 @@ func (hdl *testHandlerOrder) Handle(evt Event) error {
 
 type testEventOrderHandler struct {
 	wg        *sync.WaitGroup
-	position  *int32
-	unordered *int32
+	position  *counter
+	unordered *flag
 }
 
 func (hdl *testEventOrderHandler) Handle(evt Event) error {
 	if evt, listens := evt.(eventOrder); listens {
 		// delay the handling of the Event to simulate some sort of behavior.
-		time.Sleep(time.Nanosecond * 200)
+		fibonacci(1000)
 
-		if evt.Position() != hdl.currentPosition() {
-			atomic.StoreInt32(hdl.unordered, 1)
+		if !hdl.position.is(evt.Position()) {
+			hdl.unordered.enable()
 		}
-		hdl.incrementPosition()
+		hdl.position.increment()
 		hdl.wg.Done()
 	}
 	return nil
-}
-func (hdl *testEventOrderHandler) IsUnordered() bool {
-	return atomic.LoadInt32(hdl.unordered) == 1
-}
-func (hdl *testEventOrderHandler) currentPosition() int32 {
-	return atomic.LoadInt32(hdl.position)
-}
-func (hdl *testEventOrderHandler) incrementPosition() {
-	atomic.AddInt32(hdl.position, 1)
 }
 
 type benchmarkOrderedEventHandler struct {
@@ -205,7 +216,7 @@ type benchmarkOrderedEventHandler struct {
 
 func (hdl *benchmarkOrderedEventHandler) Handle(evt Event) error {
 	if _, listens := evt.(*benchmarkOrderedEvent); listens {
-		time.Sleep(time.Nanosecond * 200)
+		fibonacci(1000)
 		hdl.wg.Done()
 	}
 	return nil
@@ -217,7 +228,7 @@ type benchmarkConcurrentEventHandler struct {
 
 func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) error {
 	if _, listens := evt.(*benchmarkConcurrentEvent); listens {
-		time.Sleep(time.Nanosecond * 200)
+		fibonacci(1000)
 		hdl.wg.Done()
 	}
 	return nil
@@ -227,12 +238,16 @@ func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) error {
 
 type storeErrorsHandler struct {
 	sync.Mutex
-	errs map[string]error
+	wg   *sync.WaitGroup
+	errs map[Identifier]error
 }
 
 func (hdl *storeErrorsHandler) Handle(evt Event, err error) {
 	hdl.Lock()
 	hdl.errs[hdl.key(evt)] = err
+	if hdl.wg != nil {
+		hdl.wg.Done()
+	}
 	hdl.Unlock()
 }
 
@@ -245,9 +260,25 @@ func (hdl *storeErrorsHandler) Error(evt Event) error {
 	return nil
 }
 
-func (hdl *storeErrorsHandler) key(evt Event) string {
+func (hdl *storeErrorsHandler) key(evt Event) Identifier {
 	if evt == nil {
-		return "nil"
+		return Unidentified
+	} else {
+		return evt.Identifier()
 	}
-	return string(evt.ID())
+}
+
+//------General------//
+
+func fibonacci(n uint) *big.Int {
+	if n < 2 {
+		return big.NewInt(int64(n))
+	}
+	a, b := big.NewInt(0), big.NewInt(1)
+	for n--; n > 0; n-- {
+		a.Add(a, b)
+		a, b = b, a
+	}
+
+	return b
 }

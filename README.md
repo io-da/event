@@ -29,10 +29,14 @@ Clean and simple codebase. **No reflection, no closures.**
 ## Getting Started
 
 ### Events
-Events are any type that implements the _Event_ interface. Ideally they should contain immutable data.  
+This type is used to provide a consistent identity solution for both events and topics.  
+```go
+type Identifier int64
+```
+Events are any type that implements the _Event_ interface. Ideally they should contain immutable data.
 ```go
 type Event interface {
-    ID() []byte
+    Identifier() Identifier
 }
 ```
 
@@ -40,12 +44,12 @@ An event may optionally implement the _Topic_ interface. If it does, then it wil
 ```go
 type Topic interface {
     Event
-    Topic() string
+    Topic() Identifier
 }
 ```
 Any event _emitted_ within the same topic is **guaranteed to be _handled_ respecting their order of emission.**  
 However, this order is **not guaranteed across different topics**.  
-A topic is just a string (the name), the event bus will take care of the rest.  
+A topic is just an _Identifier_ (```int64```), the event bus will take care of the rest.  
 Events that **do not** implement the _Topic_ interface will be considered concurrent.  
 The _Bus_ takes advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
 
@@ -75,7 +79,7 @@ The application should instantiate the _Bus_ once and then use it's reference in
 #### Tweaking Performance
 For applications that take advantage of concurrent events, the number of concurrent workers can be adjusted.
 ```go
-bus.ConcurrentWorkerPoolSize(10)
+bus.SetConcurrentWorkerPoolSize(10)
 ```
 If used, this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
 In some scenarios increasing the value can drastically improve performance.  
@@ -83,7 +87,7 @@ It defaults to the value returned by ```runtime.GOMAXPROCS(0)```.
   
 When aware of the total amount of different topics available in the application. Then that value should be provided with this function.
 ```go
-bus.TopicsCapacity(10)
+bus.SetTopicsCapacity(10)
 ```
 If used, this function **must** be called **before** the _Bus_ is initialized.  
 It defaults to 10.  
@@ -91,7 +95,7 @@ It defaults to 10.
 The buffer size of topics can also be adjusted.  
 Depending on the use case, this value may greatly impact performance.
 ```go
-bus.TopicBuffer(100)
+bus.SetTopicBuffer(100)
 ```
 If used, this function **must** be called **before** the _Bus_ is initialized.  
 It defaults to 100.  
@@ -104,25 +108,12 @@ bus.Shutdown()
 **This function will block until the bus is fully stopped.**
 
 #### Available Errors 
-Below is a list of errors that can occur when calling bus.Emit.  
+Below is a list of errors that can occur when calling ```bus.Emit```.  
 
 ```go
-// event.ErrorInvalidEvent  
-// event.ErrorEventBusNotInitialized
-// event.ErrorEventBusIsShuttingDown
-
-if err := bus.Emit(&Event{}); err != nil {
-    switch(err.(type)) {
-        case event.ErrorInvalidEvent:
-            // do something
-        case event.ErrorEventBusNotInitialized:
-            // do something
-        case event.ErrorEventBusIsShuttingDown:
-            // do something
-        default:
-            // do something
-    }
-}
+event.ErrorInvalidEvent  
+event.ErrorEventBusNotInitialized
+event.ErrorEventBusIsShuttingDown
 ```
 
 ## Benchmarks
@@ -130,41 +121,46 @@ All the benchmarks are performed against batches of 1 million events.
 All the ordered events belong to the same topic.  
 All the benchmarks contain some overhead due to the usage of _sync.WaitGroup_.
 
-#### Benchmarks without handler behavior
-The event handlers are empty to test solely the bus overhead.  
-
-| Benchmark Type | Time |
-| :--- | :---: |
-| Ordered Events | 116 ns/op |
-| Concurrent Events | 114 ns/op |
-
 #### Benchmarks with simulated handler behavior
-The event handlers use ```time.Sleep(time.Nanosecond * 200)``` for simulation purposes.  
+The event handlers calculate the fibonacci of 1000 for simulation purposes.
 
 | Benchmark Type | Time |
 | :--- | :---: |
-| Ordered Events | 796 ns/op |
-| Concurrent Events | 501 ns/op |
+| Ordered Events | 17355 ns/op |
+| Concurrent Events | 2565 ns/op |
 
 ## Examples
-
+An optional constants list of event and topic identifiers (idiomatic ```enum```) for consistency
+```go
+const (
+   Unidentified Identifier = iota
+   FooEvent
+   BarEvent
+)
+```
+```go
+const (
+   Unidentified Identifier = iota
+   BarTopic
+)
+```
 #### Example Events
 A simple ```struct``` event.
 ```go
 type Foo struct {
     bar string
 }
-func (*Foo) ID() []byte {
-    return []byte("FOO-UUID")
+func (*Foo) Identifier() Identifier {
+    return FooEvent
 }
 ```
 
 A ```string``` event that implements the _Topic_ interface.
 ```go
 type Bar string
-func (Bar) Topic() string { return "bar-topic" }
-func (Bar) ID() []byte {
-    return []byte("BAR-UUID")
+func (Bar) Topic() Identifier { return BarTopic }
+func (Bar) Identifier() Identifier {
+    return BarEvent
 }
 ```
 
@@ -206,7 +202,7 @@ func main() {
     // instantiate the bus (returns *event.Bus)
     bus := event.NewBus()
     
-    // initialize the bus with all of the application's event handlers
+    // initialize the bus with all the application's event handlers
     bus.Initialize(
     	// this handler will always be executed first
         &LoggerHandler{},
