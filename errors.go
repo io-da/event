@@ -11,6 +11,8 @@ func (e BusError) Error() string {
 const (
 	// InvalidEventError is returned when attempting to handle an invalid event type.
 	InvalidEventError = BusError("event: invalid event")
+	// InvalidTopicError is returned when events are emitted to a non-existent topic.
+	InvalidTopicError = BusError("event: invalid topic")
 	// BusNotInitializedError is returned when events are emitted but the bus is not initialized.
 	BusNotInitializedError = BusError("event: the bus is not initialized")
 	// BusIsShuttingDownError is returned when events are emitted but the bus is shutting down.

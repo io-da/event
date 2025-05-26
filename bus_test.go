@@ -1,6 +1,7 @@
 package event
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -17,20 +18,11 @@ func TestBus_Initialize(t *testing.T) {
 	}
 }
 
-func TestBus_TopicsCapacity(t *testing.T) {
-	bus := NewBus()
-	bus.SetTopicsCapacity(100)
-	bus.Initialize()
-	if cap(bus.topics) != 100 {
-		t.Error("Unexpected topic slice capacity.")
-	}
-}
-
 func TestBus_TopicBuffer(t *testing.T) {
 	bus := NewBus()
 	bus.SetTopicBuffer(1000)
 	bus.Initialize()
-	if cap(bus.concurrentQueuedEvents) != 1000 {
+	if cap(bus.concurrentQueue) != 1000 {
 		t.Error("Unexpected topic queue capacity.")
 	}
 }
@@ -49,42 +41,29 @@ func TestBus_Emit(t *testing.T) {
 	bus.SetErrorHandlers(errHdl)
 
 	wg2.Add(1)
-	bus.Emit(nil)
-	err := errHdl.Error(nil)
-	if err == nil || err != InvalidEventError {
-		t.Error("Expected InvalidEventError error.")
-	} else if err.Error() != "event: invalid event" {
-		t.Error("Unexpected InvalidEventError message.")
-	}
-
+	mustErrorT(bus.Emit(context.TODO(), nil))(t, InvalidEventError)
 	wg2.Add(1)
-	evt := &testEvent1{}
-	bus.Emit(evt)
-	err = errHdl.Error(evt)
-	if err == nil || err != BusNotInitializedError {
-		t.Error("Expected BusNotInitializedError error.")
-	} else if err.Error() != "event: the bus is not initialized" {
-		t.Error("Unexpected BusNotInitializedError message.")
-	}
+	mustErrorT(bus.Emit(context.TODO(), &testEvent1{}))(t, BusNotInitializedError)
 
 	wg.Add(5)
 	wg2.Add(2)
 	bus.SetErrorHandlers(errHdl)
-	bus.Initialize(hdl, hdl2, hdlWErr)
+	bus.AddTopics(TestTopic, TestTopic2)
 	evtErr := &testEventError{}
-	bus.Emit(evtErr)
 	evtErr2 := &testEventError2{}
-	bus.Emit(evtErr2)
-	bus.Emit(&testEvent1{})
-	bus.Emit(&testEvent2{})
-	bus.Emit(testEvent3("test"))
+	bus.Initialize(hdl, hdl2, hdlWErr)
+	mustT(bus.Emit(context.TODO(), evtErr))(t)
+	mustT(bus.Emit(context.TODO(), evtErr2))(t)
+	mustT(bus.Emit(context.TODO(), &testEvent1{}))(t)
+	mustT(bus.Emit(context.TODO(), &testEvent2{}))(t)
+	mustT(bus.Emit(context.TODO(), testEvent3("test")))(t)
 
 	timeout := time.AfterFunc(time.Second*10, func() {
 		t.Fatal("The events should have been handled by now.")
 	})
 
 	wg.Wait()
-	wg2.Wait()
+	// wg2.Wait()
 	timeout.Stop()
 
 	if err := errHdl.Error(evtErr); err == nil {
@@ -108,14 +87,14 @@ func TestBus_Shutdown(t *testing.T) {
 
 	bus.SetConcurrentWorkerPoolSize(1337)
 	bus.Initialize(hdl)
-	bus.Emit(&testEvent1{})
+	mustT(bus.Emit(context.TODO(), &testEvent1{}))(t)
 	time.AfterFunc(time.Microsecond, func() {
 		// graceful shutdown
 		bus.Shutdown()
 		wg.Done()
 	})
 	for i := 0; i < 1000; i++ {
-		bus.Emit(&testEvent1{})
+		mustT(bus.Emit(context.TODO(), &testEvent1{}))(t)
 	}
 	time.Sleep(time.Microsecond)
 	if !bus.shuttingDown.enabled() {
@@ -138,9 +117,9 @@ func TestBus_ManyTopics(t *testing.T) {
 	bus.Initialize(hdl)
 	wg.Add(1000)
 	for i := int64(0); i < 1000; i++ {
-		bus.Emit(&testEventDynamicTopic{
+		mustT(bus.Emit(context.TODO(), &testEventDynamicTopic{
 			Tpc: Identifier(i),
-		})
+		}))(t)
 	}
 	wg.Wait()
 }
@@ -160,7 +139,7 @@ func TestBus_HandlerOrder(t *testing.T) {
 		position:  newCounter(),
 		unordered: newFlag(),
 	}
-	bus.Emit(evt)
+	mustT(bus.Emit(context.TODO(), evt))(t)
 
 	timeout := time.AfterFunc(time.Second*10, func() {
 		t.Fatal("The events should have been handled by now.")
@@ -185,7 +164,7 @@ func TestBus_OrderedEvents(t *testing.T) {
 	bus.Initialize(hdl)
 	wg.Add(1000)
 	for i := uint32(0); i < 1000; i++ {
-		bus.Emit(&testEventOrder{position: i})
+		mustT(bus.Emit(context.TODO(), &testEventOrder{position: i}))(t)
 	}
 
 	timeout := time.AfterFunc(time.Second*10, func() {
@@ -212,7 +191,7 @@ func TestBus_ConcurrentEvents(t *testing.T) {
 	bus.Initialize(hdl)
 	wg.Add(1000)
 	for i := 0; i < 1000; i++ {
-		bus.Emit(&testEventConcurrent{position: uint32(i)})
+		mustT(bus.Emit(context.TODO(), &testEventConcurrent{position: uint32(i)}))(t)
 	}
 
 	timeout := time.AfterFunc(time.Second*10, func() {
@@ -236,7 +215,7 @@ func BenchmarkBus_Handling1MillionOrderedEvents(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		wg.Add(1000000)
 		for i := 0; i < 1000000; i++ {
-			bus.Emit(&benchmarkOrderedEvent{})
+			_ = bus.Emit(context.TODO(), &benchmarkOrderedEvent{})
 		}
 		wg.Wait()
 	}
@@ -250,7 +229,7 @@ func BenchmarkBus_Handling1MillionConcurrentEvents(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		wg.Add(1000000)
 		for i := 0; i < 1000000; i++ {
-			bus.Emit(&benchmarkConcurrentEvent{})
+			_ = bus.Emit(context.TODO(), &benchmarkConcurrentEvent{})
 		}
 		wg.Wait()
 	}

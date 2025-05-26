@@ -1,6 +1,7 @@
 package event
 
 import (
+	"context"
 	"runtime"
 )
 
@@ -8,7 +9,6 @@ import (
 // The Bus should be instantiated using the NewBus function.
 type Bus struct {
 	concurrentWorkerPoolSize int
-	topicsCapacity           int
 	topicBuffer              int
 	initialized              *flag
 	shuttingDown             *flag
@@ -16,7 +16,7 @@ type Bus struct {
 	handlers                 []Handler
 	errorHandlers            []ErrorHandler
 	topics                   []*topic
-	concurrentQueuedEvents   chan Event
+	concurrentQueue          chan wrapper
 	closed                   chan bool
 }
 
@@ -25,7 +25,6 @@ type Bus struct {
 func NewBus() *Bus {
 	return &Bus{
 		concurrentWorkerPoolSize: runtime.GOMAXPROCS(0),
-		topicsCapacity:           10,
 		topicBuffer:              100,
 		initialized:              newFlag(),
 		shuttingDown:             newFlag(),
@@ -52,19 +51,11 @@ func (bus *Bus) SetErrorHandlers(hdls ...ErrorHandler) {
 	}
 }
 
-// SetTopicsCapacity may optionally be used to tweak the starting capacity on the topic slice.
-// Ideally this value would be equal to the total amount of available topics.
-// It can only be adjusted *before* the bus is initialized.
-// It defaults to 10.
-func (bus *Bus) SetTopicsCapacity(topicsCapacity int) {
-	if !bus.initialized.enabled() {
-		bus.topicsCapacity = topicsCapacity
-	}
-}
-
 // SetTopicBuffer may optionally be used to tweak the buffer size of topics.
 // This value may have high impact on performance depending on the use case.
 // It can only be adjusted *before* the bus is initialized.
+// It affects the buffer size of topics added afterwards.
+// It does not affect the buffer size of topics added prior to this call.
 // It defaults to 100.
 func (bus *Bus) SetTopicBuffer(topicBuffer int) {
 	if !bus.initialized.enabled() {
@@ -72,29 +63,51 @@ func (bus *Bus) SetTopicBuffer(topicBuffer int) {
 	}
 }
 
+// AddTopics may be used to provide topics that will be used by the bus.
+// It can only be adjusted *before* the bus is initialized.
+// It defaults to an empty list. Meaning no topics are available.
+// Topics are unique by their identifier. If an existing identifier is added, it will be ignored.
+func (bus *Bus) AddTopics(ids ...Identifier) {
+	if !bus.initialized.enabled() {
+		if bus.topics == nil {
+			bus.topics = make([]*topic, 0, len(ids))
+		}
+		for _, id := range ids {
+			tpc := bus.topic(id)
+			if tpc != nil {
+				continue
+			}
+			ntpc := newTopic(id, bus.topicBuffer, &bus.handlers, &bus.errorHandlers)
+			bus.addTopic(ntpc)
+		}
+	}
+}
+
 // Initialize the event bus.
 func (bus *Bus) Initialize(hdls ...Handler) {
 	if bus.initialized.enable() {
 		bus.handlers = hdls
-		bus.topics = make([]*topic, 0, bus.topicsCapacity)
-		bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
+		bus.concurrentQueue = make(chan wrapper, bus.topicBuffer)
 		for i := 0; i < bus.concurrentWorkerPoolSize; i++ {
-			bus.workers.increment()
-			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
+			go bus.worker(bus.concurrentQueue, bus.closed)
 		}
 	}
 }
 
 // Emit an Event to the event bus.
-func (bus *Bus) Emit(evt Event) {
-	if bus.isValid(evt) {
-		if evt, implements := evt.(Topic); implements {
-			tpc := bus.topic(evt)
-			tpc.handle(evt)
-			return
-		}
-		bus.concurrentQueuedEvents <- evt
+func (bus *Bus) Emit(ctx context.Context, evt Event) error {
+	if err := bus.validate(evt); err != nil {
+		return err
 	}
+	if evt, implements := evt.(Topic); implements {
+		if tpc := bus.topic(evt.Topic()); tpc != nil {
+			tpc.handle(ctx, evt)
+			return nil
+		}
+		return InvalidTopicError
+	}
+	bus.handleConcurrent(ctx, evt)
+	return nil
 }
 
 // Shutdown the event bus gracefully.
@@ -107,13 +120,14 @@ func (bus *Bus) Shutdown() {
 
 //-----Private Functions------//
 
-func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
+func (bus *Bus) worker(queuedEvents <-chan wrapper, closed chan<- bool) {
+	bus.workers.increment()
 	for evt := range queuedEvents {
-		if evt == nil {
+		if evt.shutdown() {
 			break
 		}
 		for _, hdl := range bus.handlers {
-			if err := hdl.Handle(evt); err != nil {
+			if err := hdl.Handle(evt.ctx, evt.evt); err != nil {
 				bus.error(evt, err)
 			}
 		}
@@ -121,9 +135,13 @@ func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
 	closed <- true
 }
 
+func (bus *Bus) handleConcurrent(ctx context.Context, evt Event) {
+	bus.concurrentQueue <- wrapper{ctx, evt}
+}
+
 func (bus *Bus) shutdown() {
 	for !bus.workers.is(0) {
-		bus.concurrentQueuedEvents <- nil
+		bus.concurrentQueue <- shutdown
 		<-bus.closed
 		bus.workers.decrement()
 	}
@@ -134,15 +152,13 @@ func (bus *Bus) shutdown() {
 	bus.shuttingDown.disable()
 }
 
-func (bus *Bus) topic(evt Topic) *topic {
+func (bus *Bus) topic(id Identifier) *topic {
 	for _, tpc := range bus.topics {
-		if tpc.id == evt.Topic() {
+		if tpc.id == id {
 			return tpc
 		}
 	}
-	tpc := newTopic(evt.Topic(), bus.topicBuffer, &bus.handlers, &bus.errorHandlers)
-	bus.addTopic(tpc)
-	return tpc
+	return nil
 }
 
 func (bus *Bus) addTopic(tpc *topic) {
@@ -156,29 +172,26 @@ func (bus *Bus) doubleCapacity() {
 	l := len(bus.topics)
 	c := cap(bus.topics) * 2
 
-	nTpc := make([]*topic, l, c)
-	copy(nTpc, bus.topics)
-	bus.topics = nTpc
+	topics := make([]*topic, l, c)
+	copy(topics, bus.topics)
+	bus.topics = topics
 }
 
-func (bus *Bus) isValid(evt Event) bool {
+func (bus *Bus) validate(evt Event) error {
 	if evt == nil {
-		bus.error(evt, InvalidEventError)
-		return false
+		return InvalidEventError
 	}
 	if !bus.initialized.enabled() {
-		bus.error(evt, BusNotInitializedError)
-		return false
+		return BusNotInitializedError
 	}
 	if bus.shuttingDown.enabled() {
-		bus.error(evt, BusIsShuttingDownError)
-		return false
+		return BusIsShuttingDownError
 	}
-	return true
+	return nil
 }
 
-func (bus *Bus) error(evt Event, err error) {
+func (bus *Bus) error(evt wrapper, err error) {
 	for _, errHdl := range bus.errorHandlers {
-		errHdl.Handle(evt, err)
+		errHdl.Handle(evt.ctx, evt.evt, err)
 	}
 }

@@ -1,6 +1,8 @@
 package event
 
+import "context"
+
 // Handler must be implemented for a type to qualify as an event handler.
 type Handler interface {
-	Handle(evt Event) error
+	Handle(ctx context.Context, evt Event) error
 }

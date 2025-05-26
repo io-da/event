@@ -1,8 +1,10 @@
 package event
 
+import "context"
+
 type topic struct {
 	id            Identifier
-	queuedEvents  chan Event
+	queuedEvents  chan wrapper
 	closed        chan bool
 	handlers      *[]Handler
 	errorHandlers *[]ErrorHandler
@@ -11,7 +13,7 @@ type topic struct {
 func newTopic(id Identifier, buffer int, handlers *[]Handler, errorHandlers *[]ErrorHandler) *topic {
 	tpc := &topic{
 		id:            id,
-		queuedEvents:  make(chan Event, buffer),
+		queuedEvents:  make(chan wrapper, buffer),
 		closed:        make(chan bool),
 		handlers:      handlers,
 		errorHandlers: errorHandlers,
@@ -22,18 +24,18 @@ func newTopic(id Identifier, buffer int, handlers *[]Handler, errorHandlers *[]E
 	return tpc
 }
 
-func (tpc *topic) handle(evt Event) {
-	tpc.queuedEvents <- evt
+func (tpc *topic) handle(ctx context.Context, evt Event) {
+	tpc.queuedEvents <- wrapper{ctx, evt}
 }
 
-func (tpc *topic) worker(queuedEvents <-chan Event, closed chan<- bool) {
-	for evt := range queuedEvents {
-		if evt == nil {
+func (tpc *topic) worker(queuedEvents <-chan wrapper, closed chan<- bool) {
+	for wrp := range queuedEvents {
+		if wrp.shutdown() {
 			break
 		}
 		for _, hdl := range *tpc.handlers {
-			if err := hdl.Handle(evt); err != nil {
-				tpc.error(evt, err)
+			if err := hdl.Handle(wrp.ctx, wrp.evt); err != nil {
+				tpc.error(wrp, err)
 			}
 		}
 	}
@@ -41,12 +43,12 @@ func (tpc *topic) worker(queuedEvents <-chan Event, closed chan<- bool) {
 }
 
 func (tpc *topic) shutdown() {
-	tpc.queuedEvents <- nil
+	tpc.queuedEvents <- shutdown
 	<-tpc.closed
 }
 
-func (tpc *topic) error(evt Event, err error) {
+func (tpc *topic) error(evt wrapper, err error) {
 	for _, errHdl := range *tpc.errorHandlers {
-		errHdl.Handle(evt, err)
+		errHdl.Handle(evt.ctx, evt.evt, err)
 	}
 }

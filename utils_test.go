@@ -1,9 +1,11 @@
 package event
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"sync"
+	"testing"
 )
 
 // ------Enums------//
@@ -137,7 +139,7 @@ type testHandler1 struct {
 	wg *sync.WaitGroup
 }
 
-func (hdl *testHandler1) Handle(evt Event) error {
+func (hdl *testHandler1) Handle(ctx context.Context, evt Event) error {
 	if _, listens := evt.(*testEvent1); listens {
 		hdl.wg.Done()
 	}
@@ -148,7 +150,7 @@ type testHandler2 struct {
 	wg *sync.WaitGroup
 }
 
-func (hdl *testHandler2) Handle(evt Event) error {
+func (hdl *testHandler2) Handle(ctx context.Context, evt Event) error {
 	switch evt.(type) {
 	case *testEvent2, testEvent3, *testEventDynamicTopic:
 		hdl.wg.Done()
@@ -159,7 +161,7 @@ func (hdl *testHandler2) Handle(evt Event) error {
 type emptyHandler struct {
 }
 
-func (hdl *emptyHandler) Handle(evt Event) error {
+func (hdl *emptyHandler) Handle(ctx context.Context, evt Event) error {
 	// handles everything
 	return nil
 }
@@ -168,7 +170,7 @@ type testHandlerWithError struct {
 	wg *sync.WaitGroup
 }
 
-func (hdl *testHandlerWithError) Handle(evt Event) error {
+func (hdl *testHandlerWithError) Handle(ctx context.Context, evt Event) error {
 	switch evt.(type) {
 	case *testEventError, *testEventError2:
 		hdl.wg.Done()
@@ -182,7 +184,7 @@ type testHandlerOrder struct {
 	position uint32
 }
 
-func (hdl *testHandlerOrder) Handle(evt Event) error {
+func (hdl *testHandlerOrder) Handle(ctx context.Context, evt Event) error {
 	if evt, listens := evt.(*testHandlerOrderEvent); listens {
 		evt.HandlerPosition(hdl.position)
 		hdl.wg.Done()
@@ -196,7 +198,7 @@ type testEventOrderHandler struct {
 	unordered *flag
 }
 
-func (hdl *testEventOrderHandler) Handle(evt Event) error {
+func (hdl *testEventOrderHandler) Handle(ctx context.Context, evt Event) error {
 	if evt, listens := evt.(eventOrder); listens {
 		// delay the handling of the Event to simulate some sort of behavior.
 		fibonacci(1000)
@@ -214,7 +216,7 @@ type benchmarkOrderedEventHandler struct {
 	wg *sync.WaitGroup
 }
 
-func (hdl *benchmarkOrderedEventHandler) Handle(evt Event) error {
+func (hdl *benchmarkOrderedEventHandler) Handle(ctx context.Context, evt Event) error {
 	if _, listens := evt.(*benchmarkOrderedEvent); listens {
 		fibonacci(1000)
 		hdl.wg.Done()
@@ -226,7 +228,7 @@ type benchmarkConcurrentEventHandler struct {
 	wg *sync.WaitGroup
 }
 
-func (hdl *benchmarkConcurrentEventHandler) Handle(evt Event) error {
+func (hdl *benchmarkConcurrentEventHandler) Handle(ctx context.Context, evt Event) error {
 	if _, listens := evt.(*benchmarkConcurrentEvent); listens {
 		fibonacci(1000)
 		hdl.wg.Done()
@@ -242,7 +244,7 @@ type storeErrorsHandler struct {
 	errs map[Identifier]error
 }
 
-func (hdl *storeErrorsHandler) Handle(evt Event, err error) {
+func (hdl *storeErrorsHandler) Handle(ctx context.Context, evt Event, err error) {
 	hdl.Lock()
 	hdl.errs[hdl.key(evt)] = err
 	if hdl.wg != nil {
@@ -281,4 +283,50 @@ func fibonacci(n uint) *big.Int {
 	}
 
 	return b
+}
+
+//------Assertions------//
+
+func mustT(err error) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+		mustNotError(t, err)
+	}
+}
+
+func mustReturnT[T any](val T, err error) func(t *testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		mustNotError(t, err)
+		return val
+	}
+}
+
+func mustErrorT(err error) func(t *testing.T, expected error) {
+	return func(t *testing.T, expected error) {
+		t.Helper()
+		mustError(t, err, expected)
+	}
+}
+
+func mustErrorReturnT[T any](_ T, err error) func(t *testing.T, expected error) {
+	return func(t *testing.T, expected error) {
+		t.Helper()
+		mustError(t, err, expected)
+	}
+}
+
+func mustError(t *testing.T, err, target error) {
+	t.Helper()
+	if err == nil || !errors.Is(err, target) {
+		t.Fatalf("- expected error \"%s\", but got %v", target.Error(), err)
+	}
+}
+
+func mustNotError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("--- MUST FAILED ---\n"+
+			"- expected no error, but got \"%s\"", err.Error())
+	}
 }
