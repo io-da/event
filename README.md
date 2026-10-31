@@ -1,225 +1,148 @@
-# [Go](https://golang.org/) Event Bus
-An event bus to react to all the things.
+# Go event bus
 
-[![Maintainability](https://api.codeclimate.com/v1/badges/f256105248459e250292/maintainability)](https://codeclimate.com/github/io-da/event/maintainability) 
-[![Test Coverage](https://api.codeclimate.com/v1/badges/f256105248459e250292/test_coverage)](https://codeclimate.com/github/io-da/event/test_coverage) 
-[![GoDoc](https://godoc.org/github.com/io-da/event?status.svg)](https://godoc.org/github.com/io-da/event)  
+An in-process event bus with identifier routing, independent subscriber queues,
+context propagation, middleware, and graceful draining. Requires the Go version
+in [go.mod](go.mod).
 
-## Installation
-``` go get github.com/io-da/event ```
-
-## Overview
-1. [Events](#Events)
-2. [Handlers](#Handlers)
-3. [Error Handlers](#Error-Handlers)
-4. [The Bus](#The-Bus)  
-   1. [Tweaking Performance](#Tweaking-Performance)  
-   2. [Shutting Down](#Shutting-Down)  
-   3. [Available Errors](#Available-Errors)  
-5. [Benchmarks](#Benchmarks)
-6. [Examples](#Examples)
-
-## Introduction
-This library is intended for anyone looking to emit events in their application. And it achieves this objective using an event bus architecture.  
-The _Bus_ will use _workers_ ([goroutines](https://gobyexample.com/goroutines)) to attempt handling the events in **non-blocking** manner.  
-Clean and simple codebase. **No reflection, no closures.**
-
-![Flowchart](flowchart.png?raw=true "Flowchart")
-
-## Getting Started
-
-### Events
-This type is used to provide a consistent identity solution for both events and topics.  
-```go
-type Identifier int64
-```
-Events are any type that implements the _Event_ interface. Ideally they should contain immutable data.
-```go
-type Event interface {
-    Identifier() Identifier
-}
+```sh
+go get github.com/io-da/event
 ```
 
-An event may optionally implement the _Topic_ interface. If it does, then it will be handled within that topic.   
-```go
-type Topic interface {
-    Event
-    Topic() Identifier
-}
-```
-Any event _emitted_ within the same topic is **guaranteed to be _handled_ respecting their order of emission.**  
-However, this order is **not guaranteed across different topics**.  
-A topic is just an _Identifier_ (```int64```), the event bus will take care of the rest.  
-Events that **do not** implement the _Topic_ interface will be considered concurrent.  
-The _Bus_ takes advantage of **additional** _workers_ ([goroutines](https://gobyexample.com/goroutines)) to handle concurrent events faster, but their **emission order will not be respected**.
-
-### Handlers
-Handlers are any type that implements the _Handler_ interface. Handlers must be instantiated and provided to the bus on initialization.    
-```go
-type Handler interface {
-    Handle(evt Event) error
-}
-```
-
-### Error Handlers
-Error handlers are any type that implements the _ErrorHandler_ interface. Error handlers are optional (but advised) and provided to the bus using the ```bus.ErrorHandlers``` function.  
-```go
-type ErrorHandler interface {
-    Handle(evt Event, err error)
-}
-```
-Any time an error occurs within the bus, it will be passed on to the error handlers. This strategy can be used for decoupled error handling.
-
-### The Bus
-_Bus_ is the _struct_ that will be used to emit all the application's events.  
-The _Bus_ should be instantiated and initialized on application startup. The initialization is separated from the instantiation for dependency injection purposes.  
-The application should instantiate the _Bus_ once and then use it's reference in all the places that will be emitting events.  
-**The order in which the handlers are provided to the _Bus_ is always respected.**
-
-#### Tweaking Performance
-For applications that take advantage of concurrent events, the number of concurrent workers can be adjusted.
-```go
-bus.SetConcurrentWorkerPoolSize(10)
-```
-If used, this function **must** be called **before** the _Bus_ is initialized. And it specifies the number of [goroutines](https://gobyexample.com/goroutines) used to handle concurrent events.  
-In some scenarios increasing the value can drastically improve performance.  
-It defaults to the value returned by ```runtime.GOMAXPROCS(0)```.  
-  
-When aware of the total amount of different topics available in the application. Then that value should be provided with this function.
-```go
-bus.SetTopicsCapacity(10)
-```
-If used, this function **must** be called **before** the _Bus_ is initialized.  
-It defaults to 10.  
-  
-The buffer size of topics can also be adjusted.  
-Depending on the use case, this value may greatly impact performance.
-```go
-bus.SetTopicBuffer(100)
-```
-If used, this function **must** be called **before** the _Bus_ is initialized.  
-It defaults to 100.  
-
-#### Shutting Down
-The _Bus_ also provides a shutdown function that attempts to gracefully stop the event bus and all its routines.
-```go
-bus.Shutdown()
-```  
-**This function will block until the bus is fully stopped.**
-
-#### Available Errors 
-Below is a list of errors that can occur when calling ```bus.Emit```.  
+## Usage
 
 ```go
-event.ErrorInvalidEvent  
-event.ErrorEventBusNotInitialized
-event.ErrorEventBusIsShuttingDown
-```
+package main
 
-## Benchmarks
-All the benchmarks are performed against batches of 1 million events.  
-All the ordered events belong to the same topic.  
-All the benchmarks contain some overhead due to the usage of _sync.WaitGroup_.
-
-#### Benchmarks with simulated handler behavior
-The event handlers calculate the fibonacci of 1000 for simulation purposes.
-
-| Benchmark Type | Time |
-| :--- | :---: |
-| Ordered Events | 17355 ns/op |
-| Concurrent Events | 2565 ns/op |
-
-## Examples
-An optional constants list of event and topic identifiers (idiomatic ```enum```) for consistency
-```go
-const (
-   Unidentified Identifier = iota
-   FooEvent
-   BarEvent
-)
-```
-```go
-const (
-   Unidentified Identifier = iota
-   BarTopic
-)
-```
-#### Example Events
-A simple ```struct``` event.
-```go
-type Foo struct {
-    bar string
-}
-func (*Foo) Identifier() Identifier {
-    return FooEvent
-}
-```
-
-A ```string``` event that implements the _Topic_ interface.
-```go
-type Bar string
-func (Bar) Topic() Identifier { return BarTopic }
-func (Bar) Identifier() Identifier {
-    return BarEvent
-}
-```
-
-#### Example Handlers
-An event handler that logs every event emitted.
-```go
-type LoggerHandler struct {
-}
-
-func (hdl *LoggerHandler) Handle(evt Event) error {
-    log.Printf("event %T emitted", evt)
-    return nil
-}
-```
-
-An event handler that listens to multiple event types.
-```go
-type FooBarHandler struct {
-}
-
-func (hdl *FooBarHandler) Handle(evt Event) error {
-    // a convenient way to assert multiple event types.
-    switch evt := evt.(type) {
-    case *Foo, Bar:
-        // handler logic
-    }
-    return nil
-}
-```
-
-#### Putting it together
-Initialization and usage of the exemplified events and handlers
-```go
 import (
+    "context"
+    "log"
+    "time"
+
     "github.com/io-da/event"
 )
 
+type Price struct { Value int }
+func (Price) Identifier() event.Identifier { return 1 }
+
 func main() {
-    // instantiate the bus (returns *event.Bus)
-    bus := event.NewBus()
-    
-    // initialize the bus with all the application's event handlers
-    bus.Initialize(
-    	// this handler will always be executed first
-        &LoggerHandler{},
-        // this one second
-        &FooBarHandler{},
+    bus := event.NewBus(
+        event.WithWorkerPoolSize(2),
+        event.WithQueueBuffer(256),
+        event.WithErrorHandlers(event.ErrorHandlerFunc(
+            func(ctx context.Context, err error, evt event.Event) {
+                log.Printf("event processing failed: %v", err)
+            },
+        )),
     )
-    
-    // emit events
-    bus.Emit(&Foo{})
-    bus.Emit(Bar("bar"))
+    handler := event.NewHandler(1, func(ctx context.Context, price Price) error {
+        log.Printf("price: %d", price.Value)
+        return nil
+    })
+    if err := bus.Initialize(handler); err != nil { log.Fatal(err) }
+    if err := bus.Publish(context.Background(), Price{Value: 42}); err != nil {
+        log.Print(err)
+    }
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := bus.Shutdown(ctx); err != nil { log.Print(err) }
 }
 ```
 
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Create the bus before wiring application dependencies, then initialize it once
+with all handlers. Each handler subscribes to exactly one `Identifier`; register
+multiple handlers for multiple identifiers. Unmatched events succeed. A typed
+handler still checks the event's concrete type and reports `InvalidEventError` if
+an identifier is shared by incompatible types.
 
-Please make sure to update tests as appropriate.
+## Queues and ordering
 
-## License
-[MIT](https://choosealicense.com/licenses/mit/)
+Each registration has its own queue and workers. Defaults are one worker and a
+buffer of 100. `WithWorkerPoolSize`, `WithQueueBuffer`, and `WithOverflowPolicy`
+configure bus defaults. Counts must be positive; invalid options panic.
+
+Override a subscriber's defaults with:
+
+```go
+subscriber := event.WithSubscription(handler,
+    event.WithSubscriptionWorkers(1),
+    event.WithSubscriptionBuffer(32),
+    event.WithSubscriptionOverflow(event.OverflowDropOldest),
+)
+// Pass subscriber to bus.Initialize.
+```
+
+| Policy | Full queue behavior |
+| --- | --- |
+| `OverflowBlock` (default) | Wait for capacity, context cancellation, or shutdown |
+| `OverflowDropNewest` | Return `ErrQueueFull` for that delivery |
+| `OverflowDropOldest` | Evict the oldest queued item and accept the new item |
+
+Workers are isolated, but a full blocking queue delays the publisher and later
+subscribers in that call. Fanout is not atomic: returned errors may represent
+partial delivery. Use `errors.Is` on returned errors. Successful publication means
+admission, not successful processing. Drop-oldest eviction is silent by design.
+
+An event may implement `Topic() event.Identifier` in addition to `Identifier()`.
+Each subscriber/topic pair gets a separate queue and one worker, preserving order
+for sequential publications to that topic. Concurrent publishers have no defined
+relative order. Topic queues remain until shutdown, so bound topic cardinality.
+Multiple workers may reorder non-topic events. Subscribers execute independently;
+there is no cross-handler execution order guarantee.
+
+## Middleware and errors
+
+`Middleware` is `func(event.HandlerFunc) event.HandlerFunc`, where `HandlerFunc`
+is `func(context.Context, event.Event) error`. Install middleware using
+`WithMiddlewares`; the first is outermost. Middleware is assembled per subscription.
+
+Processing failures go to configured error handlers. Handler and middleware
+execution panics become `*event.ErrHandlerPanic` with a panic value and stack;
+workers continue. Error-handler panics are contained so later error handlers run.
+Error handlers and handlers must support concurrent calls when workers or topics
+can execute concurrently. Configuration callbacks and event identifier methods
+are outside the worker panic boundary.
+
+Admission errors are returned directly. Nil and typed-nil events are invalid.
+Share only immutable events, or provide application synchronization.
+
+## Context and shutdown
+
+Publication contexts reach handlers and error handlers. Canceled queued work is
+skipped and reported to error handlers; running work must honor cancellation
+itself. Keep the context alive for the desired processing lifetime.
+
+`Shutdown(ctx)` permanently rejects new events, unblocks waiting publishers, and
+drains admitted work. A deadline stops only the caller's wait; draining continues.
+Call `Shutdown` again to wait for completion. A bus cannot restart. Do not call
+blocking shutdown from a handler on that bus, or recursively fill a handler's own
+blocking queue.
+
+## Migration
+
+This revision breaks the previous API and needs a major release:
+
+- Replace `NewBus()` followed by setters with constructor options.
+- Replace `SetConcurrentWorkerPoolSize` with `WithWorkerPoolSize` (now per subscriber).
+- Replace `SetTopicBuffer` with `WithQueueBuffer`; `SetTopicsCapacity` is removed.
+- Replace `SetErrorHandlers` with `WithErrorHandlers`.
+- Add `Handles() Identifier` to handlers and a context argument to `Handle`, or
+  use `NewHandler[T]`. Handlers no longer receive every event automatically.
+- Use `Publish(ctx, evt)` or `Emit(ctx, evt)` and check the admission error.
+- Error handlers now use `Handle(ctx, err, evt)`.
+- Check the result of `Initialize` and use `Shutdown(ctx)`.
+- Replace assumptions about sequential execution across handlers with explicit
+  application coordination. Topic order is guaranteed within each subscription.
+
+There is no `Async.Await` API. Use error handlers for processing failures and
+shutdown as a bus-wide completion barrier. See [refactor.md](refactor.md) for the
+review, design contracts, and limitations.
+
+## Validation
+
+```sh
+go test -race -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+go vet ./...
+```
+
+CI requires at least 90% statement coverage.

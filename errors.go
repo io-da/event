@@ -1,18 +1,25 @@
 package event
 
-// BusError is used to create errors originating from the event bus
+import "fmt"
+
+// BusError is a constant sentinel error originating from the bus.
 type BusError string
 
-// Error returns the string message of the error.
-func (e BusError) Error() string {
-	return string(e)
-}
+func (e BusError) Error() string { return string(e) }
 
 const (
-	// InvalidEventError is returned when attempting to handle an invalid event type.
-	InvalidEventError = BusError("event: invalid event")
-	// BusNotInitializedError is returned when events are emitted but the bus is not initialized.
-	BusNotInitializedError = BusError("event: the bus is not initialized")
-	// BusIsShuttingDownError is returned when events are emitted but the bus is shutting down.
-	BusIsShuttingDownError = BusError("event: the bus is shutting down")
+	InvalidEventError          BusError = "event: invalid event"
+	BusNotInitializedError     BusError = "event: the bus is not initialized"
+	BusIsShuttingDownError     BusError = "event: the bus is shutting down"
+	BusAlreadyInitializedError BusError = "event: the bus is already initialized"
+	InvalidHandlerError        BusError = "event: invalid handler"
+	ErrQueueFull               BusError = "event: queue full; newest event dropped"
 )
+
+// ErrHandlerPanic describes a recovered handler or middleware panic.
+type ErrHandlerPanic struct {
+	Value any
+	Stack []byte
+}
+
+func (e *ErrHandlerPanic) Error() string { return fmt.Sprintf("event: handler panic: %v", e.Value) }

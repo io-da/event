@@ -8,7 +8,9 @@ type Event interface {
 	Identifier() Identifier
 }
 
-// Topic must be implemented by events whose order of emission must be respected.
+// Topic identifies an ordering lane within each subscription. Sequential
+// publications retain their order within that lane; different subscribers and
+// topics run independently. Concurrent publishers have no defined relative order.
 type Topic interface {
 	Event
 	Topic() Identifier

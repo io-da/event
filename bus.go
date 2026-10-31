@@ -1,184 +1,210 @@
 package event
 
 import (
-	"runtime"
+	"context"
+	"errors"
+	"reflect"
+	"runtime/debug"
+	"slices"
+	"sync"
 )
 
-// Bus is the only struct exported and required for the event bus usage.
-// The Bus should be instantiated using the NewBus function.
+// Bus routes events to independent subscriptions. Construct it with NewBus.
+// A bus cannot be restarted after Shutdown. Do not copy a Bus.
 type Bus struct {
-	concurrentWorkerPoolSize int
-	topicsCapacity           int
-	topicBuffer              int
-	initialized              *flag
-	shuttingDown             *flag
-	workers                  *counter
-	handlers                 []Handler
-	errorHandlers            []ErrorHandler
-	topics                   []*topic
-	concurrentQueuedEvents   chan Event
-	closed                   chan bool
+	mu                    sync.Mutex
+	config                config
+	initialized, stopping bool
+	routes                map[Identifier][]*subscription
+	queues                []*queue
+	publishers            sync.WaitGroup
+	workers               sync.WaitGroup
+	stop, done            chan struct{}
+}
+type subscription struct {
+	config  config
+	handle  HandlerFunc
+	regular *queue
+	topics  map[Identifier]*queue
+}
+type work struct {
+	ctx   context.Context
+	event Event
 }
 
-// NewBus instantiates the Bus struct.
-// The Initialization of the Bus is performed separately (Initialize function) for dependency injection purposes.
-func NewBus() *Bus {
-	return &Bus{
-		concurrentWorkerPoolSize: runtime.GOMAXPROCS(0),
-		topicsCapacity:           10,
-		topicBuffer:              100,
-		initialized:              newFlag(),
-		shuttingDown:             newFlag(),
-		workers:                  newCounter(),
-		errorHandlers:            make([]ErrorHandler, 0),
-		closed:                   make(chan bool),
+// NewBus configures the bus without starting workers. Invalid options panic.
+func NewBus(opts ...Option) *Bus {
+	c := config{workers: 1, buffer: 100}
+	for _, opt := range opts {
+		opt(&c)
 	}
+	return &Bus{config: c, stop: make(chan struct{}), done: make(chan struct{})}
 }
 
-// SetConcurrentWorkerPoolSize may optionally be provided to tweak the worker pool size for concurrent events.
-// It can only be adjusted *before* the bus is initialized.
-// It defaults to the value returned by runtime.GOMAXPROCS(0).
-func (bus *Bus) SetConcurrentWorkerPoolSize(concurrentWorkerPoolSize int) {
-	if !bus.initialized.enabled() {
-		bus.concurrentWorkerPoolSize = concurrentWorkerPoolSize
+// Initialize registers handlers and starts workers. Registration is all-or-nothing.
+func (b *Bus) Initialize(handlers ...Handler) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.stopping {
+		return BusIsShuttingDownError
 	}
-}
-
-// SetErrorHandlers may optionally be used to provide a list of error handlers.
-// They will receive any error thrown during the event handling process.
-func (bus *Bus) SetErrorHandlers(hdls ...ErrorHandler) {
-	if !bus.initialized.enabled() {
-		bus.errorHandlers = hdls
+	if b.initialized {
+		return BusAlreadyInitializedError
 	}
-}
-
-// SetTopicsCapacity may optionally be used to tweak the starting capacity on the topic slice.
-// Ideally this value would be equal to the total amount of available topics.
-// It can only be adjusted *before* the bus is initialized.
-// It defaults to 10.
-func (bus *Bus) SetTopicsCapacity(topicsCapacity int) {
-	if !bus.initialized.enabled() {
-		bus.topicsCapacity = topicsCapacity
-	}
-}
-
-// SetTopicBuffer may optionally be used to tweak the buffer size of topics.
-// This value may have high impact on performance depending on the use case.
-// It can only be adjusted *before* the bus is initialized.
-// It defaults to 100.
-func (bus *Bus) SetTopicBuffer(topicBuffer int) {
-	if !bus.initialized.enabled() {
-		bus.topicBuffer = topicBuffer
-	}
-}
-
-// Initialize the event bus.
-func (bus *Bus) Initialize(hdls ...Handler) {
-	if bus.initialized.enable() {
-		bus.handlers = hdls
-		bus.topics = make([]*topic, 0, bus.topicsCapacity)
-		bus.concurrentQueuedEvents = make(chan Event, bus.topicBuffer)
-		for i := 0; i < bus.concurrentWorkerPoolSize; i++ {
-			bus.workers.increment()
-			go bus.worker(bus.concurrentQueuedEvents, bus.closed)
-		}
-	}
-}
-
-// Emit an Event to the event bus.
-func (bus *Bus) Emit(evt Event) {
-	if bus.isValid(evt) {
-		if evt, implements := evt.(Topic); implements {
-			tpc := bus.topic(evt)
-			tpc.handle(evt)
-			return
-		}
-		bus.concurrentQueuedEvents <- evt
-	}
-}
-
-// Shutdown the event bus gracefully.
-// *Events emitted while shutting down will be disregarded*.
-func (bus *Bus) Shutdown() {
-	if bus.shuttingDown.enable() {
-		bus.shutdown()
-	}
-}
-
-//-----Private Functions------//
-
-func (bus *Bus) worker(queuedEvents <-chan Event, closed chan<- bool) {
-	for evt := range queuedEvents {
-		if evt == nil {
-			break
-		}
-		for _, hdl := range bus.handlers {
-			if err := hdl.Handle(evt); err != nil {
-				bus.error(evt, err)
+	routes := make(map[Identifier][]*subscription)
+	for _, h := range handlers {
+		c := b.config
+		if configured, ok := h.(configuredHandler); ok {
+			h = configured.Handler
+			for _, opt := range configured.options {
+				opt(&c)
 			}
 		}
+		if isNil(h) {
+			return InvalidHandlerError
+		}
+		fn := h.Handle
+		for _, v := range slices.Backward(c.middlewares) {
+			fn = v(fn)
+		}
+		s := &subscription{config: c, handle: fn, topics: make(map[Identifier]*queue)}
+		id := h.Handles()
+		routes[id] = append(routes[id], s)
 	}
-	closed <- true
-}
-
-func (bus *Bus) shutdown() {
-	for !bus.workers.is(0) {
-		bus.concurrentQueuedEvents <- nil
-		<-bus.closed
-		bus.workers.decrement()
-	}
-	for _, tpc := range bus.topics {
-		tpc.shutdown()
-	}
-	bus.initialized.disable()
-	bus.shuttingDown.disable()
-}
-
-func (bus *Bus) topic(evt Topic) *topic {
-	for _, tpc := range bus.topics {
-		if tpc.id == evt.Topic() {
-			return tpc
+	b.routes = routes
+	for _, subs := range routes {
+		for _, s := range subs {
+			s.regular = b.startQueue(s, s.config.workers)
 		}
 	}
-	tpc := newTopic(evt.Topic(), bus.topicBuffer, &bus.handlers, &bus.errorHandlers)
-	bus.addTopic(tpc)
-	return tpc
+	b.initialized = true
+	return nil
 }
 
-func (bus *Bus) addTopic(tpc *topic) {
-	if len(bus.topics) == cap(bus.topics) {
-		bus.doubleCapacity()
+// Publish enqueues an event for matching handlers. Success means admission, not
+// completion. Fanout is not atomic: cancellation/overflow may cause partial delivery.
+// Unmatched events succeed. Publishing a mutable event requires caller synchronization.
+func (b *Bus) Publish(ctx context.Context, evt Event) error {
+	if isNil(evt) {
+		return InvalidEventError
 	}
-	bus.topics = append(bus.topics, tpc)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	id := evt.Identifier()
+	topicID, ordered := Identifier(0), false
+	if t, ok := evt.(Topic); ok {
+		topicID, ordered = t.Topic(), true
+	}
+	b.mu.Lock()
+	if b.stopping {
+		b.mu.Unlock()
+		return BusIsShuttingDownError
+	}
+	if !b.initialized {
+		b.mu.Unlock()
+		return BusNotInitializedError
+	}
+	var queues []*queue
+	for _, s := range b.routes[id] {
+		q := s.regular
+		if ordered {
+			q = s.topics[topicID]
+			if q == nil {
+				q = b.startQueue(s, 1)
+				s.topics[topicID] = q
+			}
+		}
+		queues = append(queues, q)
+	}
+	b.publishers.Add(1)
+	b.mu.Unlock()
+	defer b.publishers.Done()
+	var errs []error
+	for _, q := range queues {
+		if err := q.push(ctx, b.stop, work{ctx, evt}); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
-func (bus *Bus) doubleCapacity() {
-	l := len(bus.topics)
-	c := cap(bus.topics) * 2
+// Emit is an alias for Publish.
+func (b *Bus) Emit(ctx context.Context, evt Event) error { return b.Publish(ctx, evt) }
 
-	nTpc := make([]*topic, l, c)
-	copy(nTpc, bus.topics)
-	bus.topics = nTpc
+// Shutdown rejects new work and drains admitted work. Cancellation stops only
+// this caller's wait; draining continues and later calls can wait again.
+// Call from outside handlers: a handler cannot synchronously wait for its own drain.
+func (b *Bus) Shutdown(ctx context.Context) error {
+	b.mu.Lock()
+	if !b.stopping {
+		b.stopping = true
+		close(b.stop)
+		go func() {
+			b.publishers.Wait()
+			for _, q := range b.queues {
+				q.close()
+			}
+			b.workers.Wait()
+			close(b.done)
+		}()
+	}
+	b.mu.Unlock()
+	select {
+	case <-b.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (bus *Bus) isValid(evt Event) bool {
-	if evt == nil {
-		bus.error(evt, InvalidEventError)
-		return false
+func (b *Bus) startQueue(s *subscription, workers int) *queue {
+	q := newQueue(s.config.buffer, s.config.overflow)
+	b.queues = append(b.queues, q)
+	b.workers.Add(workers)
+	for range workers {
+		go func() {
+			defer b.workers.Done()
+			for {
+				w, ok := q.pop()
+				if !ok {
+					return
+				}
+				b.process(s, w)
+			}
+		}()
 	}
-	if !bus.initialized.enabled() {
-		bus.error(evt, BusNotInitializedError)
-		return false
-	}
-	if bus.shuttingDown.enabled() {
-		bus.error(evt, BusIsShuttingDownError)
-		return false
-	}
-	return true
+	return q
 }
-
-func (bus *Bus) error(evt Event, err error) {
-	for _, errHdl := range bus.errorHandlers {
-		errHdl.Handle(evt, err)
+func (b *Bus) process(s *subscription, w work) {
+	err := func() (err error) {
+		defer func() {
+			if v := recover(); v != nil {
+				err = &ErrHandlerPanic{v, debug.Stack()}
+			}
+		}()
+		if err := w.ctx.Err(); err != nil {
+			return err
+		}
+		return s.handle(w.ctx, w.event)
+	}()
+	if err != nil {
+		for _, h := range b.config.errorHandlers {
+			func() {
+				defer func() { _ = recover() }()
+				h.Handle(w.ctx, err, w.event)
+			}()
+		}
 	}
+}
+func isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	r := reflect.ValueOf(v)
+	switch r.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return r.IsNil()
+	}
+	return false
 }

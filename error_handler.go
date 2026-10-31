@@ -1,6 +1,15 @@
 package event
 
-// ErrorHandler is the interface that must be implemented by any type to be considered an error handler.
+import "context"
+
+// ErrorHandler receives processing errors, including recovered panics.
+// Implementations must support concurrent calls. Panics are contained so other
+// error handlers still run; they are not recursively reported.
 type ErrorHandler interface {
-	Handle(evt Event, err error)
+	Handle(context.Context, error, Event)
 }
+
+// ErrorHandlerFunc adapts a function to ErrorHandler.
+type ErrorHandlerFunc func(context.Context, error, Event)
+
+func (f ErrorHandlerFunc) Handle(ctx context.Context, err error, evt Event) { f(ctx, err, evt) }
