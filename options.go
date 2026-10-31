@@ -67,7 +67,7 @@ func WithErrorHandlers(h ...ErrorHandler) Option {
 	copied := append([]ErrorHandler(nil), h...)
 	return func(c *config) {
 		for _, eh := range copied {
-			if isNil(eh) {
+			if eh == nil {
 				panic("event: nil error handler")
 			}
 		}

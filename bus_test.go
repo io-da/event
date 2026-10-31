@@ -56,10 +56,6 @@ func TestLifecycle(t *testing.T) {
 	if err := b.Publish(bg, nil); !errors.Is(err, InvalidEventError) {
 		t.Fatal(err)
 	}
-	var e *message
-	if err := b.Publish(bg, e); !errors.Is(err, InvalidEventError) {
-		t.Fatal(err)
-	}
 	if err := b.Emit(bg, message{}); !errors.Is(err, BusNotInitializedError) {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package event
 import (
 	"context"
 	"errors"
-	"reflect"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -60,7 +59,7 @@ func (b *Bus) Initialize(handlers ...Handler) error {
 				opt(&c)
 			}
 		}
-		if isNil(h) {
+		if h == nil {
 			return InvalidHandlerError
 		}
 		fn := h.Handle
@@ -85,7 +84,7 @@ func (b *Bus) Initialize(handlers ...Handler) error {
 // completion. Fanout is not atomic: cancellation/overflow may cause partial delivery.
 // Unmatched events succeed. Publishing a mutable event requires caller synchronization.
 func (b *Bus) Publish(ctx context.Context, evt Event) error {
-	if isNil(evt) {
+	if evt == nil {
 		return InvalidEventError
 	}
 	if err := ctx.Err(); err != nil {
@@ -196,15 +195,4 @@ func (b *Bus) process(s *subscription, w work) {
 			}()
 		}
 	}
-}
-func isNil(v any) bool {
-	if v == nil {
-		return true
-	}
-	r := reflect.ValueOf(v)
-	switch r.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return r.IsNil()
-	}
-	return false
 }
