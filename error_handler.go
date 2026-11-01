@@ -4,7 +4,8 @@ import "context"
 
 // ErrorHandler receives processing errors, including recovered panics.
 // Implementations must support concurrent calls. Panics are contained so other
-// error handlers still run; they are not recursively reported.
+// error handlers still run; they are reported to the optional LogHandler, never
+// recursively to error handlers.
 type ErrorHandler interface {
 	Handle(context.Context, error, Event)
 }

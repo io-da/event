@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -21,6 +22,8 @@ type Bus struct {
 	stop, done            chan struct{}
 }
 type subscription struct {
+	id      Identifier
+	index   int
 	config  config
 	handle  HandlerFunc
 	regular *queue
@@ -51,7 +54,7 @@ func (b *Bus) Initialize(handlers ...Handler) error {
 		return BusAlreadyInitializedError
 	}
 	routes := make(map[Identifier][]*subscription)
-	for _, h := range handlers {
+	for index, h := range handlers {
 		c := b.config
 		if configured, ok := h.(configuredHandler); ok {
 			h = configured.Handler
@@ -68,12 +71,13 @@ func (b *Bus) Initialize(handlers ...Handler) error {
 		}
 		s := &subscription{config: c, handle: fn, topics: make(map[Identifier]*queue)}
 		id := h.Handles()
+		s.id, s.index = id, index
 		routes[id] = append(routes[id], s)
 	}
 	b.routes = routes
 	for _, subs := range routes {
 		for _, s := range subs {
-			s.regular = b.startQueue(s, s.config.workers)
+			s.regular = b.startQueue(s, s.config.workers, 0, false)
 		}
 	}
 	b.initialized = true
@@ -110,7 +114,7 @@ func (b *Bus) Publish(ctx context.Context, evt Event) error {
 		if ordered {
 			q = s.topics[topicID]
 			if q == nil {
-				q = b.startQueue(s, 1)
+				q = b.startQueue(s, 1, topicID, true)
 				s.topics[topicID] = q
 			}
 		}
@@ -133,6 +137,7 @@ func (b *Bus) Emit(ctx context.Context, evt Event) error { return b.Publish(ctx,
 
 // Shutdown rejects new work and drains admitted work. Cancellation stops only
 // this caller's wait; draining continues and later calls can wait again.
+// An already-completed shutdown returns nil even if ctx is canceled.
 // Call from outside handlers: a handler cannot synchronously wait for its own drain.
 func (b *Bus) Shutdown(ctx context.Context) error {
 	b.mu.Lock()
@@ -149,6 +154,12 @@ func (b *Bus) Shutdown(ctx context.Context) error {
 		}()
 	}
 	b.mu.Unlock()
+	// Prefer completed shutdown even when the caller context is already canceled.
+	select {
+	case <-b.done:
+		return nil
+	default:
+	}
 	select {
 	case <-b.done:
 		return nil
@@ -157,8 +168,11 @@ func (b *Bus) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (b *Bus) startQueue(s *subscription, workers int) *queue {
+func (b *Bus) startQueue(s *subscription, workers int, topicID Identifier, hasTopic bool) *queue {
 	q := newQueue(s.config.buffer, s.config.overflow)
+	q.logger = b.config.logger
+	q.logInfo = LogEvent{EventID: s.id, SubscriptionID: s.index, TopicID: topicID,
+		HasTopic: hasTopic, OverflowPolicy: s.config.overflow, QueueCapacity: s.config.buffer}
 	b.queues = append(b.queues, q)
 	b.workers.Add(workers)
 	for range workers {
@@ -169,13 +183,14 @@ func (b *Bus) startQueue(s *subscription, workers int) *queue {
 				if !ok {
 					return
 				}
-				b.process(s, w)
+				b.process(s, q, w)
 			}
 		}()
 	}
 	return q
 }
-func (b *Bus) process(s *subscription, w work) {
+func (b *Bus) process(s *subscription, q *queue, w work) {
+	kind, level, message := LogHandlerError, slog.LevelError, "event processing failed"
 	err := func() (err error) {
 		defer func() {
 			if v := recover(); v != nil {
@@ -183,14 +198,23 @@ func (b *Bus) process(s *subscription, w work) {
 			}
 		}()
 		if err := w.ctx.Err(); err != nil {
+			kind, level, message = LogEventCanceled, slog.LevelWarn, "queued event canceled"
 			return err
 		}
 		return s.handle(w.ctx, w.event)
 	}()
 	if err != nil {
+		if q.logger != nil {
+			q.logger.log(w.ctx, q.record(kind, level, message, err, w.event))
+		}
 		for _, h := range b.config.errorHandlers {
 			func() {
-				defer func() { _ = recover() }()
+				defer func() {
+					if v := recover(); v != nil && q.logger != nil {
+						q.logger.log(w.ctx, q.record(LogErrorHandlerPanic, slog.LevelError,
+							"error handler panicked", &ErrHandlerPanic{v, debug.Stack()}, w.event))
+					}
+				}()
 				h.Handle(w.ctx, err, w.event)
 			}()
 		}

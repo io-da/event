@@ -69,6 +69,7 @@ subscriber := event.WithSubscription(handler,
     event.WithSubscriptionOverflow(event.OverflowDropOldest),
 )
 // Pass subscriber to bus.Initialize.
+// Nested WithSubscription calls preserve inner settings; outer settings win.
 ```
 
 | Policy | Full queue behavior |
@@ -80,7 +81,8 @@ subscriber := event.WithSubscription(handler,
 Workers are isolated, but a full blocking queue delays the publisher and later
 subscribers in that call. Fanout is not atomic: returned errors may represent
 partial delivery. Use `errors.Is` on returned errors. Successful publication means
-admission, not successful processing. Drop-oldest eviction is silent by design.
+admission, not successful processing. Drop-oldest eviction does not return an
+error, but emits a warning when a log handler is configured.
 
 An event may implement `Topic() event.Identifier` in addition to `Identifier()`.
 Each subscriber/topic pair gets a separate queue and one worker, preserving order
@@ -102,8 +104,65 @@ Error handlers and handlers must support concurrent calls when workers or topics
 can execute concurrently. Configuration callbacks and event identifier methods
 are outside the worker panic boundary.
 
-Admission errors are returned directly. Nil and typed-nil events are invalid.
+Admission errors are returned directly. Nil interfaces are rejected. Callers must
+not pass typed-nil events or handlers; the bus does not use reflection to detect them.
 Share only immutable events, or provide application synchronization.
+
+## Optional diagnostic logging
+
+Configure a callback with `WithLogHandler`. No logger is installed by default;
+`WithLogHandler(nil)` disables it, and the last configured log handler wins.
+`Option` follows the existing package API and does not return an error.
+
+```go
+bus := event.NewBus(event.WithLogHandler(func(ctx context.Context, entry event.LogEvent) {
+    slog.Log(ctx, entry.Level, entry.Message,
+        "kind", entry.Kind,
+        "error", entry.Error,
+        "event_id", entry.EventID,
+        "subscription_id", entry.SubscriptionID,
+        "has_topic", entry.HasTopic,
+        "topic_id", entry.TopicID,
+        "overflow_policy", entry.OverflowPolicy,
+        "queue_length", entry.QueueLength,
+        "queue_capacity", entry.QueueCapacity,
+    )
+}))
+```
+
+This example uses the standard library's `log/slog`; the callback can adapt to
+any logging library. `LogEvent.Level` is a `slog.Level`. `Kind` is a stable
+identifier so consumers need not parse message text.
+
+| Kind | Level | When |
+| --- | --- | --- |
+| `LogQueueOverflow` | Warn | A full queue applies block, drop-oldest, or drop-newest |
+| `LogEventCanceled` | Warn | An admitted event's context expires before processing |
+| `LogHandlerError` | Error | Handler/middleware returns an error or panics |
+| `LogErrorHandlerPanic` | Error | An error handler panics; later error handlers still run |
+
+Overflow warnings identify the queue with `EventID`, `SubscriptionID` (zero-based
+position in `Initialize`), `HasTopic`, and `TopicID`. `HasTopic` distinguishes a
+non-topic queue from topic zero. `QueueLength` snapshots the full queue before
+policy application; it is zero for non-overflow records. `QueueCapacity` and
+`OverflowPolicy` reflect the subscription's actual settings.
+
+`Event` is the incoming event. `DroppedEvent` is the evicted oldest event or the
+rejected newest event; it is nil for blocking overflow. `Error` is `ErrQueueFull`
+for drop-newest and `ErrQueueOverflow` for the other overflow policies. These
+warnings do not change publication results: block can eventually succeed and
+drop-oldest still accepts its replacement. Block emits one warning per delivery
+attempt, before waiting, even if the queue wakes repeatedly while still full.
+
+Callbacks receive the publication context and run synchronously outside bus and
+queue locks. They must be concurrency-safe and return promptly: a slow logger
+adds latency to publishing or processing. Do not synchronously wait for the same
+bus to shut down or publish recursively from the callback. Callback panics are
+contained without recursive logging. Event values are shared references and must
+not be mutated by the logger. Error handlers continue to receive processing
+failures; enabling both callbacks may intentionally produce duplicate logs if
+both are configured to log the same failure. Admission errors other than queue
+overflow are returned to the caller without automatic logging.
 
 ## Context and shutdown
 
@@ -113,7 +172,8 @@ itself. Keep the context alive for the desired processing lifetime.
 
 `Shutdown(ctx)` permanently rejects new events, unblocks waiting publishers, and
 drains admitted work. A deadline stops only the caller's wait; draining continues.
-Call `Shutdown` again to wait for completion. A bus cannot restart. Do not call
+Call `Shutdown` again to wait for completion. Once draining has completed,
+`Shutdown` returns nil even with an already-canceled wait context. A bus cannot restart. Do not call
 blocking shutdown from a handler on that bus, or recursively fill a handler's own
 blocking queue.
 

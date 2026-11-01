@@ -2,12 +2,15 @@ package event
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 )
 
 // queue is a bounded ring. changed broadcasts state transitions to workers and
 // publishers; producers never send to a channel that shutdown could close.
 type queue struct {
+	logger     LogHandler
+	logInfo    LogEvent
 	mu         sync.Mutex
 	items      []work
 	head, size int
@@ -22,7 +25,15 @@ func newQueue(capacity int, policy OverflowPolicy) *queue {
 func (q *queue) signal() { close(q.changed); q.changed = make(chan struct{}) }
 func (q *queue) push(ctx context.Context, stop <-chan struct{}, w work) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
+	var pending *LogEvent
+	defer func() {
+		q.mu.Unlock()
+		if pending != nil {
+			q.logger.log(ctx, *pending)
+		}
+	}()
+	warned := false
+admit:
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -35,16 +46,36 @@ func (q *queue) push(ctx context.Context, stop <-chan struct{}, w work) error {
 		if q.size < len(q.items) {
 			break
 		}
+		var record LogEvent
+		if q.logger != nil && !warned {
+			record = q.record(LogQueueOverflow, slog.LevelWarn, "queue full; applying overflow policy", ErrQueueOverflow, w.event)
+			record.QueueLength = q.size
+		}
 		switch q.policy {
 		case OverflowDropNewest:
+			if q.logger != nil {
+				record.Error, record.DroppedEvent = ErrQueueFull, w.event
+				pending = &record
+			}
 			return ErrQueueFull
 		case OverflowDropOldest:
+			if q.logger != nil {
+				record.DroppedEvent = q.items[q.head].event
+				pending = &record
+			}
 			q.items[q.head] = work{}
 			q.head = (q.head + 1) % len(q.items)
 			q.size--
+			// Eviction and replacement commit together, with no second cancellation
+			// check that could discard the old item without admitting its replacement.
+			break admit
 		default:
 			changed := q.changed
 			q.mu.Unlock()
+			if q.logger != nil && !warned {
+				q.logger.log(ctx, record)
+				warned = true
+			}
 			select {
 			case <-changed:
 			case <-ctx.Done():

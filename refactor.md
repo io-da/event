@@ -81,8 +81,8 @@ reported. Running handlers must cooperate with cancellation. The caller must kee
 the context alive for the desired processing lifetime, not only until enqueue returns.
 
 Admission failures are returned directly and are not sent to error handlers.
-Unmatched identifiers succeed without delivery. Nil and typed-nil events are
-rejected. Events must be immutable or synchronized by their owners.
+Unmatched identifiers succeed without delivery. Nil interfaces are rejected.
+Callers must not pass typed-nil events or handlers; normal flow uses no reflection. Events must be immutable or synchronized by their owners.
 
 Handler and middleware execution panics become `*ErrHandlerPanic`, containing the
 panic value and stack. Workers continue. Error-handler panics are contained and
@@ -121,3 +121,43 @@ the new API and the Go version declared by the existing go.mod.
 Validation result: 25 consecutive race-enabled test runs passed with 100.0%
 statement coverage. `go vet ./...` and `git diff --check` passed. The pre-existing
 Go 1.27 change in go.mod was preserved.
+
+
+## Follow-up self-review and diagnostics
+
+The review identified and corrected three behavioral issues:
+
+- Drop-oldest previously checked cancellation again after eviction, allowing it
+  to discard the old event without inserting its replacement. Eviction and
+  replacement now commit together under the queue lock after the admission check.
+- Nested `WithSubscription` calls previously ignored inner settings. Options now
+  compose without mutating the inner wrapper; outer settings take precedence.
+- A completed shutdown and canceled wait context previously competed in a select,
+  making the result nondeterministic. Already-completed shutdown now returns nil.
+
+`WithLogHandler(LogHandler)` installs optional structured diagnostics, where
+`LogHandler` is `func(context.Context, LogEvent)`. The existing `Option` signature
+is preserved. A nil logger disables logging. Records include kind, standard-library
+slog severity, message, error, incoming/dropped event, subscription index, event and
+topic identifiers, and queue policy/capacity/depth. Overflow warnings cover all
+policies, with one warning per blocking delivery attempt before waiting. Processing
+failures, skipped canceled events, and error-handler panics are also observable.
+
+Logging callbacks run synchronously outside internal locks and their panics are
+contained. No logging goroutines, dependencies, or reflection are introduced.
+Logger latency remains the application's responsibility. Existing error-handler
+behavior and publication return values are preserved. Drop-oldest eviction is
+observable through logs but remains successful admission.
+
+Regression coverage includes the three fixes, all overflow policies on regular
+and topic queues, topic zero, context propagation, dropped-event identity,
+logger panic containment, disabled logging, repeated blocking wakeups, callbacks
+outside locks, processing/error-handler failures, and concurrent logging.
+
+Remaining design constraints are deliberate: bounded lossless queues can delay
+fanout, topic cardinality must be bounded by callers, and callbacks must not
+synchronously wait for their own bus to drain. These are documented API contracts,
+not changed by diagnostic logging.
+
+Follow-up validation: 25 race-enabled suite runs passed with 100.0% statement
+coverage. `go vet ./...` and `git diff --check` also passed.

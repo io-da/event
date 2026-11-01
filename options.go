@@ -14,6 +14,7 @@ type config struct {
 	overflow        OverflowPolicy
 	middlewares     []Middleware
 	errorHandlers   []ErrorHandler
+	logger          LogHandler
 }
 
 // Option configures a bus at construction time.
@@ -75,6 +76,12 @@ func WithErrorHandlers(h ...ErrorHandler) Option {
 	}
 }
 
+// WithLogHandler installs optional diagnostic logging. The last option wins;
+// passing nil disables logging. Existing error handlers still receive failures.
+func WithLogHandler(handler LogHandler) Option {
+	return func(c *config) { c.logger = handler }
+}
+
 // SubscriptionOption overrides queue settings for one handler registration.
 type SubscriptionOption func(*config)
 
@@ -91,7 +98,14 @@ type configuredHandler struct {
 	options []SubscriptionOption
 }
 
-// WithSubscription gives a handler independent queue settings. Apply once per registration.
+// WithSubscription gives a handler independent queue settings. Nested calls
+// preserve inner options; outer options take precedence.
 func WithSubscription(h Handler, opts ...SubscriptionOption) Handler {
-	return configuredHandler{h, append([]SubscriptionOption(nil), opts...)}
+	var combined []SubscriptionOption
+	if inner, ok := h.(configuredHandler); ok {
+		h = inner.Handler
+		combined = append(combined, inner.options...)
+	}
+	combined = append(combined, opts...)
+	return configuredHandler{h, combined}
 }

@@ -13,10 +13,11 @@ const (
 	BusIsShuttingDownError     BusError = "event: the bus is shutting down"
 	BusAlreadyInitializedError BusError = "event: the bus is already initialized"
 	InvalidHandlerError        BusError = "event: invalid handler"
+	ErrQueueOverflow           BusError = "event: queue full; overflow policy applied"
 	ErrQueueFull               BusError = "event: queue full; newest event dropped"
 )
 
-// ErrHandlerPanic describes a recovered handler or middleware panic.
+// ErrHandlerPanic describes a recovered handler, middleware, or error-handler panic.
 type ErrHandlerPanic struct {
 	Value any
 	Stack []byte
